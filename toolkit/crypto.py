@@ -3,7 +3,9 @@ from __future__ import annotations
 import base64
 import binascii
 import codecs
+import gzip
 import urllib.parse
+import zlib
 
 from rich.prompt import Prompt
 from rich.table import Table
@@ -183,10 +185,107 @@ def magic_decode() -> None:
     pause()
 
 
+def base_convert() -> None:
+    header("Number-base converter", "hex / dec / bin / oct / char in one shot")
+    s = Prompt.ask("Value (e.g. 0x41, 65, 0b1000001, or a single char)").strip()
+    n = None
+    try:
+        n = int(s, 0)
+    except ValueError:
+        if len(s) == 1:
+            n = ord(s)
+    if n is None:
+        console.print("[red]Couldn't parse that value.[/]")
+        return pause()
+    t = Table(show_header=False, box=None)
+    t.add_row("Decimal", str(n))
+    t.add_row("Hex", hex(n))
+    t.add_row("Octal", oct(n))
+    t.add_row("Binary", bin(n))
+    if 0 <= n <= 0x10FFFF:
+        t.add_row("Char", repr(chr(n)))
+    console.print(t)
+    pause()
+
+
+def rot_n() -> None:
+    header("ROT-N", "Rotate letters by any N (ROT13 uses 13)")
+    s = Prompt.ask("Text")
+    try:
+        n = int(Prompt.ask("Shift N", default="13")) % 26
+    except ValueError:
+        console.print("[red]N must be a number.[/]")
+        return pause()
+    out = "".join(
+        chr((ord(c) - base + n) % 26 + base) if c.isalpha() else c
+        for c in s for base in [65 if c.isupper() else 97]
+    )
+    console.print(f"[green]{out}[/]")
+    pause()
+
+
+def atbash() -> None:
+    header("Atbash cipher", "Mirror the alphabet (A<->Z, B<->Y ...)")
+    s = Prompt.ask("Text")
+    out = "".join(
+        chr(base + 25 - (ord(c) - base)) if c.isalpha() else c
+        for c in s for base in [65 if c.isupper() else 97]
+    )
+    console.print(f"[green]{out}[/]")
+    pause()
+
+
+def xor_key() -> None:
+    header("XOR with key", "Repeating-key XOR -- symmetric encrypt/decrypt")
+    text = Prompt.ask("Text (or hex, if you answer yes below)")
+    key = Prompt.ask("Key (text)").encode()
+    if not key:
+        console.print("[red]Key required.[/]")
+        return pause()
+    as_hex = Prompt.ask("Input is hex?", choices=["y", "n"], default="n") == "y"
+    try:
+        data = bytes.fromhex(text.replace(" ", "")) if as_hex else text.encode()
+    except ValueError:
+        console.print("[red]Invalid hex input.[/]")
+        return pause()
+    out = bytes(c ^ key[i % len(key)] for i, c in enumerate(data))
+    console.print(f"[bold]hex  :[/] [green]{out.hex()}[/]")
+    console.print(f"[bold]b64  :[/] [green]{base64.b64encode(out).decode()}[/]")
+    console.print(f"[bold]bytes:[/] [green]{out.decode(errors='replace')}[/]")
+    pause()
+
+
+def inflate() -> None:
+    header("Decompress blob", "Inflate gzip / zlib / raw-deflate data")
+    src = Prompt.ask("Input is [b]ase64 or [h]ex", choices=["b", "h"], default="b")
+    s = Prompt.ask("Data")
+    try:
+        raw = base64.b64decode(s + "===") if src == "b" else bytes.fromhex(s.replace(" ", ""))
+    except (binascii.Error, ValueError) as e:
+        console.print(f"[red]Decode error: {e}[/]")
+        return pause()
+    for label, fn in (("gzip", gzip.decompress),
+                      ("zlib", zlib.decompress),
+                      ("raw deflate", lambda d: zlib.decompress(d, -15))):
+        try:
+            out = fn(raw)
+        except Exception:
+            continue
+        console.print(f"[green]{label}[/] -> {out.decode(errors='replace')[:1000]}")
+        return pause()
+    console.print("[yellow]Not gzip / zlib / raw-deflate.[/]")
+    pause()
+
+
 MENU = {
     "1": ("Multi-decoder (auto-try everything)", multi_decode),
     "2": ("Magic recursive decoder", magic_decode),
     "3": ("Encoder", encode),
     "4": ("Caesar cipher brute-force", caesar_brute),
     "5": ("Single-byte XOR brute-force", xor_brute),
+    "6": ("Number-base converter", base_convert),
+    "7": ("ROT-N (any shift)", rot_n),
+    "8": ("Atbash cipher", atbash),
+    "9": ("XOR with key (encrypt/decrypt)", xor_key),
+    "10": ("Decompress gzip/zlib/deflate", inflate),
 }

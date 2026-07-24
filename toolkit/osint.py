@@ -429,16 +429,207 @@ def shodan_search() -> None:
     pause()
 
 
+def zone_transfer() -> None:
+    header("DNS zone transfer", "Attempt AXFR — dumps every record if the NS is misconfigured")
+    domain = Prompt.ask("Domain (e.g. zonetransfer.me)")
+    ns = Prompt.ask("Nameserver (IP or hostname)")
+    try:
+        ns_ip = ns if ns.replace(".", "").isdigit() else socket.gethostbyname(ns)
+    except socket.gaierror:
+        console.print("[red]Could not resolve nameserver.[/]")
+        return pause()
+    msg = struct.pack(">HHHHHH", 0x1234, 0, 1, 0, 0, 0) + _encode_qname(domain) + \
+        struct.pack(">HH", 252, 1)  # QTYPE 252 = AXFR
+    try:
+        s = socket.create_connection((ns_ip, 53), timeout=10)
+        s.sendall(struct.pack(">H", len(msg)) + msg)
+        s.settimeout(10)
+        data = b""
+        while len(data) < 2_000_000:
+            chunk = s.recv(65535)
+            if not chunk:
+                break
+            data += chunk
+        s.close()
+    except Exception as e:
+        console.print(f"[yellow]AXFR refused/failed: {e}[/] "
+                      "(refusing transfers is the secure default).")
+        return pause()
+
+    records, off = [], 0
+    while off + 2 <= len(data):
+        mlen = struct.unpack(">H", data[off:off + 2])[0]
+        off += 2
+        m = data[off:off + mlen]
+        off += mlen
+        if len(m) < 12:
+            continue
+        _id, flags, qd, an, _ns, _ar = struct.unpack(">HHHHHH", m[:12])
+        p = 12
+        for _ in range(qd):
+            _, p = _read_name(m, p)
+            p += 4
+        for _ in range(an):
+            try:
+                name, p = _read_name(m, p)
+                rtype, rclass, ttl, rdlen = struct.unpack(">HHIH", m[p:p + 10])
+                p += 10
+                records.append((name, DNS_TYPE_NAMES.get(rtype, str(rtype)),
+                                _parse_rdata(rtype, m[p:p + rdlen], m, p)))
+                p += rdlen
+            except Exception:
+                break
+    if not records:
+        console.print("[green]Transfer refused — no records returned (good; AXFR is "
+                      "locked down).[/]")
+        return pause()
+    t = Table(title=f"AXFR {domain} ({len(records)} records)")
+    t.add_column("Name", style="cyan", overflow="fold")
+    t.add_column("Type", style="magenta")
+    t.add_column("Data", style="green", overflow="fold")
+    for name, typ, val in records[:200]:
+        t.add_row(name, typ, val)
+    console.print(t)
+    console.print("[red][!] Zone transfer succeeded — this leaks the entire DNS zone.[/]")
+    report.log("osint", f"AXFR {domain}", [f"- {len(records)} records leaked from {ns}"])
+    pause()
+
+
+def s3_check() -> None:
+    header("S3 bucket check", "Probe common bucket-name guesses for public exposure")
+    import requests
+    base = Prompt.ask("Base name (e.g. company)").strip().lower()
+    names = [base, f"{base}-backup", f"{base}-backups", f"{base}-dev", f"{base}-prod",
+             f"{base}-assets", f"{base}-static", f"{base}-uploads", f"{base}-data",
+             f"{base}-logs", f"{base}-media", f"{base}-files", f"backup-{base}",
+             f"{base}-public", f"{base}-private"]
+    t = Table(title="S3 buckets")
+    t.add_column("Bucket", style="bold")
+    t.add_column("Status")
+    for n in names:
+        try:
+            r = requests.get(f"https://{n}.s3.amazonaws.com", timeout=6)
+            if r.status_code == 200:
+                status = "[red]PUBLIC — listable![/]"
+            elif r.status_code == 403:
+                status = "[yellow]exists (access denied)[/]"
+            elif "NoSuchBucket" in r.text or r.status_code == 404:
+                status = "[dim]no bucket[/]"
+            else:
+                status = str(r.status_code)
+        except Exception:
+            status = "[dim]error[/]"
+        t.add_row(n, status)
+    console.print(t)
+    report.log("osint", f"S3 check {base}", ["- probed 15 bucket-name permutations"])
+    pause()
+
+
+def _dns_values(host: str, qtype: int, server: str = "8.8.8.8") -> list[str]:
+    """Query one record type via raw UDP DNS; return list of rdata strings."""
+    pkt = (struct.pack(">HHHHHH", 0x2020, 0x0100, 1, 0, 0, 0)
+           + _encode_qname(host) + struct.pack(">HH", qtype, 1))
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(5)
+        s.sendto(pkt, (server, 53))
+        data, _ = s.recvfrom(4096)
+        s.close()
+    except Exception:
+        return []
+    if len(data) < 12:
+        return []
+    _id, _flags, qd, an, _ns, _ar = struct.unpack(">HHHHHH", data[:12])
+    off = 12
+    for _ in range(qd):
+        _, off = _read_name(data, off)
+        off += 4
+    out = []
+    for _ in range(an):
+        try:
+            _name, off = _read_name(data, off)
+            rtype, _rclass, _ttl, rdlen = struct.unpack(">HHIH", data[off:off + 10])
+            off += 10
+            out.append(_parse_rdata(rtype, data[off:off + rdlen], data, off))
+            off += rdlen
+        except Exception:
+            break
+    return out
+
+
+def mail_records() -> None:
+    header("Mail security records", "MX + SPF / DMARC / DKIM posture for a domain")
+    domain = Prompt.ask("Domain (e.g. example.com)").strip()
+    mx = _dns_values(domain, 15)
+    txt = _dns_values(domain, 16)
+    spf = [t for t in txt if t.lower().startswith("v=spf1")]
+    dmarc = [t for t in _dns_values("_dmarc." + domain, 16) if "v=dmarc1" in t.lower()]
+    console.print(f"\n[bold]MX:[/]    " + (", ".join(mx) if mx else "[yellow]none[/]"))
+    console.print(f"[bold]SPF:[/]   " + (spf[0] if spf else "[red]MISSING[/]"))
+    if spf and "~all" not in spf[0] and "-all" not in spf[0]:
+        console.print("  [yellow][!] SPF has no ~all/-all -- weak enforcement[/]")
+    console.print(f"[bold]DMARC:[/] " + (dmarc[0] if dmarc else "[red]MISSING[/]"))
+    if dmarc and "p=none" in dmarc[0].lower():
+        console.print("  [yellow][!] DMARC p=none -- monitoring only, not enforcing[/]")
+    selector = Prompt.ask("DKIM selector to check (blank to skip, e.g. google, default)",
+                          default="").strip()
+    if selector:
+        dkim = _dns_values(f"{selector}._domainkey.{domain}", 16)
+        console.print(f"[bold]DKIM ({selector}):[/] "
+                      + ("[green]present[/]" if dkim else "[yellow]not found[/]"))
+    report.log("osint", f"Mail records {domain}",
+               [f"- MX: {len(mx)}", f"- SPF: {'yes' if spf else 'no'}",
+                f"- DMARC: {'yes' if dmarc else 'no'}"])
+    pause()
+
+
+def reverse_ip_lookup() -> None:
+    header("Reverse IP", "Other domains sharing an IP (HackerTarget API)")
+    import requests
+    target = Prompt.ask("IP or domain").strip()
+    try:
+        text = requests.get(
+            f"https://api.hackertarget.com/reverseiplookup/?q={target}",
+            timeout=15).text.strip()
+    except Exception as e:
+        console.print(f"[red]Lookup failed: {e}[/]")
+        return pause()
+    if not text or "error" in text.lower() or "exceeded" in text.lower():
+        console.print(f"[yellow]{text or 'no results'}[/]")
+        return pause()
+    hosts = [h for h in text.splitlines() if h.strip()]
+    console.print(f"[bold]{len(hosts)}[/] host(s) on that IP:\n")
+    for h in hosts[:60]:
+        console.print(f"  [green]{h}[/]")
+    report.log("osint", f"Reverse IP {target}", [f"- {len(hosts)} co-hosted domains"])
+    pause()
+
+
+def subfinder_enum() -> None:
+    header("subfinder", "Passive subdomain enumeration (native or WSL)")
+    from .utils import run_tool, soft_require
+    if not soft_require("subfinder", "go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"):
+        return pause()
+    domain = Prompt.ask("Domain")
+    run_tool("subfinder", ["-d", domain, "-silent"])
+    pause()
+
+
 MENU = {
     "1": ("DNS resolver (raw packets)", dns_query),
-    "2": ("WHOIS lookup", whois_lookup),
-    "3": ("CIDR / subnet calculator", cidr_calc),
-    "4": ("Favicon hash (Shodan pivot)", favicon_hash),
-    "5": ("IP geolocation", ip_geolocate),
-    "6": ("Subdomains via crt.sh (CT logs)", crtsh_subdomains),
-    "7": ("Shodan host lookup", shodan_host),
-    "8": ("Shodan search", shodan_search),
-    "9": ("Email permutator", email_permutator),
-    "10": ("Google dork generator", dork_generator),
-    "11": ("Subdomain permutator", subdomain_permutator),
+    "2": ("DNS zone transfer (AXFR)", zone_transfer),
+    "3": ("WHOIS lookup", whois_lookup),
+    "4": ("CIDR / subnet calculator", cidr_calc),
+    "5": ("Favicon hash (Shodan pivot)", favicon_hash),
+    "6": ("IP geolocation", ip_geolocate),
+    "7": ("Subdomains via crt.sh (CT logs)", crtsh_subdomains),
+    "8": ("S3 bucket check", s3_check),
+    "9": ("Shodan host lookup", shodan_host),
+    "10": ("Shodan search", shodan_search),
+    "11": ("Email permutator", email_permutator),
+    "12": ("Google dork generator", dork_generator),
+    "13": ("Subdomain permutator", subdomain_permutator),
+    "14": ("Mail records (SPF/DMARC/DKIM)", mail_records),
+    "15": ("Reverse IP (co-hosted domains)", reverse_ip_lookup),
+    "16": ("subfinder (passive subdomains)", subfinder_enum),
 }

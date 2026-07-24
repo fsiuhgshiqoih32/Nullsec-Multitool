@@ -354,6 +354,88 @@ def appended_data_detect() -> None:
 _BINDMAGIC = b"FFLKBIND1"
 
 
+def _exif_gps(gps: dict):
+    from PIL.ExifTags import GPSTAGS
+    data = {GPSTAGS.get(k, k): v for k, v in gps.items()}
+    try:
+        def dms(v):
+            return float(v[0]) + float(v[1]) / 60 + float(v[2]) / 3600
+        lat = dms(data["GPSLatitude"])
+        lon = dms(data["GPSLongitude"])
+        if data.get("GPSLatitudeRef") == "S":
+            lat = -lat
+        if data.get("GPSLongitudeRef") == "W":
+            lon = -lon
+        return lat, lon
+    except Exception:
+        return None
+
+
+def exif_read() -> None:
+    header("EXIF / GPS reader", "Pull camera + GPS metadata from a photo (needs pillow)")
+    from .utils import need_lib
+    if not need_lib("PIL", "pillow"):
+        return pause()
+    from PIL import ExifTags, Image
+    p = Path(Prompt.ask("Image path").strip('"'))
+    if not p.is_file():
+        console.print("[red]File not found.[/]")
+        return pause()
+    try:
+        img = Image.open(p)
+        exif = img._getexif() or {}
+    except Exception as e:
+        console.print(f"[red]Couldn't read EXIF: {e}[/]")
+        return pause()
+    if not exif:
+        console.print("[yellow]No EXIF metadata (it may have been stripped).[/]")
+        return pause()
+    tagmap = {v: k for k, v in ExifTags.TAGS.items()}
+    t = Table(show_header=False, box=None)
+    for tag_id, val in exif.items():
+        name = ExifTags.TAGS.get(tag_id, str(tag_id))
+        if name in ("Make", "Model", "Software", "DateTime", "DateTimeOriginal",
+                    "LensModel", "Artist", "Copyright"):
+            t.add_row(name, str(val)[:80])
+    console.print(t)
+    gps_id = tagmap.get("GPSInfo")
+    if gps_id and gps_id in exif:
+        coords = _exif_gps(exif[gps_id])
+        if coords:
+            lat, lon = coords
+            console.print(f"[bold red][!] GPS:[/] {lat:.6f}, {lon:.6f}  "
+                          f"[cyan]https://maps.google.com/?q={lat},{lon}[/]")
+            report.log("forensics", f"EXIF GPS {p.name}", [f"- {lat}, {lon}"])
+    pause()
+
+
+def file_diff() -> None:
+    header("File diff", "Compare two files byte-for-byte and line-by-line")
+    a = Path(Prompt.ask("File A").strip('"'))
+    b = Path(Prompt.ask("File B").strip('"'))
+    if not a.is_file() or not b.is_file():
+        console.print("[red]Both files must exist.[/]")
+        return pause()
+    da, db = a.read_bytes(), b.read_bytes()
+    if da == db:
+        console.print("[green]Files are identical.[/]")
+        return pause()
+    console.print(f"Sizes: A={len(da):,}  B={len(db):,}  (diff {len(db) - len(da):+,} bytes)")
+    first = next((i for i in range(min(len(da), len(db))) if da[i] != db[i]),
+                 min(len(da), len(db)))
+    console.print(f"First differing byte at offset [bold]0x{first:x}[/] ({first})")
+    import difflib
+    la = da.decode("utf-8", "ignore").splitlines()
+    lb = db.decode("utf-8", "ignore").splitlines()
+    diff = list(difflib.unified_diff(la, lb, a.name, b.name, lineterm=""))
+    if diff:
+        console.print("\n[bold]Unified text diff (first 40 lines):[/]")
+        for line in diff[:40]:
+            color = "green" if line.startswith("+") else "red" if line.startswith("-") else "dim"
+            console.print(f"[{color}]{line}[/]")
+    pause()
+
+
 MENU = {
     "1": ("strings (extract text)", strings_tool),
     "2": ("hexdump", hexdump_tool),
@@ -365,4 +447,6 @@ MENU = {
     "8": ("Secret scanner (keys/tokens)", secret_scan),
     "9": ("Detect hidden file in image", appended_data_detect),
     "10": ("PE/ELF header parser", binary_headers),
+    "11": ("EXIF / GPS reader", exif_read),
+    "12": ("File diff (byte + text)", file_diff),
 }

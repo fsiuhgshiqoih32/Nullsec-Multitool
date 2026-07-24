@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import re
 import tempfile
+import zlib
 from pathlib import Path
 
 from rich.prompt import Prompt
@@ -24,6 +26,10 @@ HASH_SIGNATURES = [
     ("SHA-256-crypt","sha256crypt",re.compile(r"^\$5\$")),
     ("SHA-512-crypt","sha512crypt",re.compile(r"^\$6\$")),
     ("MySQL 4.1+",   "mysql-sha1", re.compile(r"^\*[A-F0-9]{40}$")),
+    ("Argon2",       "argon2",     re.compile(r"^\$argon2(?:id|i|d)\$")),
+    ("PBKDF2 (Django)", "django",  re.compile(r"^pbkdf2_sha256\$\d+\$")),
+    ("phpass (WP/phpBB)", "phpass", re.compile(r"^\$[PH]\$[./A-Za-z0-9]{31}$")),
+    ("Drupal 7",     "drupal7",    re.compile(r"^\$S\$[./A-Za-z0-9]{52}$")),
 ]
 
 
@@ -157,11 +163,92 @@ def checksum_verify() -> None:
     pause()
 
 
+def _md4(msg: bytes) -> bytes:
+    """MD4 from scratch (OpenSSL 3 disables it, so we don't rely on hashlib)."""
+    import struct
+    h = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476]
+
+    def rol(x, n):
+        x &= 0xFFFFFFFF
+        return ((x << n) | (x >> (32 - n))) & 0xFFFFFFFF
+
+    ml = len(msg) * 8
+    msg = msg + b"\x80"
+    while len(msg) % 64 != 56:
+        msg += b"\x00"
+    msg += struct.pack("<Q", ml)
+    for off in range(0, len(msg), 64):
+        X = struct.unpack("<16I", msg[off:off + 64])
+        A, B, C, D = h
+        for k in range(0, 16, 4):
+            for a, b, c, d, i, s in ((0, 1, 2, 3, k, 3), (3, 0, 1, 2, k + 1, 7),
+                                     (2, 3, 0, 1, k + 2, 11), (1, 2, 3, 0, k + 3, 19)):
+                r = [A, B, C, D]
+                r[a] = rol((r[a] + ((r[b] & r[c]) | (~r[b] & r[d])) + X[i]) & 0xFFFFFFFF, s)
+                A, B, C, D = r
+        for k in range(4):
+            for a, b, c, d, i, s in ((0, 1, 2, 3, k, 3), (3, 0, 1, 2, k + 4, 5),
+                                     (2, 3, 0, 1, k + 8, 9), (1, 2, 3, 0, k + 12, 13)):
+                r = [A, B, C, D]
+                r[a] = rol((r[a] + ((r[b] & r[c]) | (r[b] & r[d]) | (r[c] & r[d]))
+                            + X[i] + 0x5A827999) & 0xFFFFFFFF, s)
+                A, B, C, D = r
+        for k in (0, 2, 1, 3):
+            for a, b, c, d, i, s in ((0, 1, 2, 3, k, 3), (3, 0, 1, 2, k + 8, 9),
+                                     (2, 3, 0, 1, k + 4, 11), (1, 2, 3, 0, k + 12, 15)):
+                r = [A, B, C, D]
+                r[a] = rol((r[a] + (r[b] ^ r[c] ^ r[d]) + X[i] + 0x6ED9EBA1) & 0xFFFFFFFF, s)
+                A, B, C, D = r
+        h = [(h[0] + A) & 0xFFFFFFFF, (h[1] + B) & 0xFFFFFFFF,
+             (h[2] + C) & 0xFFFFFFFF, (h[3] + D) & 0xFFFFFFFF]
+    return struct.pack("<4I", *h)
+
+
+def ntlm_gen() -> None:
+    header("NTLM hash", "MD4(UTF-16LE) — the Windows/AD password hash (for PtH testing)")
+    pw = Prompt.ask("Password")
+    h = _md4(pw.encode("utf-16-le")).hex()
+    console.print(f"[bold green]{h}[/]")
+    console.print("[dim]Crack it: hashcat -m 1000  ·  john --format=nt[/]")
+    pause()
+
+
+def crc_calc() -> None:
+    header("CRC32 / Adler32", "Fast non-cryptographic integrity checksums")
+    src = Prompt.ask("[t]ext or [f]ile", choices=["t", "f"], default="t")
+    if src == "t":
+        data = Prompt.ask("Text").encode()
+    else:
+        p = Path(Prompt.ask("File path").strip('"'))
+        if not p.is_file():
+            console.print("[red]File not found.[/]")
+            return pause()
+        data = p.read_bytes()
+    t = Table(show_header=False, box=None)
+    t.add_row("CRC32", f"{zlib.crc32(data) & 0xffffffff:08x}")
+    t.add_row("Adler32", f"{zlib.adler32(data) & 0xffffffff:08x}")
+    console.print(t)
+    pause()
+
+
+def hmac_calc() -> None:
+    header("HMAC calculator", "Keyed hash for message authentication")
+    algo = Prompt.ask("Algorithm", choices=["md5", "sha1", "sha256", "sha512"],
+                      default="sha256")
+    key = Prompt.ask("Key").encode()
+    msg = Prompt.ask("Message").encode()
+    console.print(f"[bold green]{hmac.new(key, msg, algo).hexdigest()}[/]")
+    pause()
+
+
 MENU = {
     "1": ("Identify a hash", identify),
     "2": ("Calculate hashes (text/file)", calculate),
-    "3": ("Checksum verify / compare", checksum_verify),
-    "4": ("Crack with John the Ripper", john_crack),
-    "5": ("Crack with hashcat (GPU)", hashcat_crack),
-    "6": ("Generate practice hashes", make_demo_hashes),
+    "3": ("NTLM hash generator", ntlm_gen),
+    "4": ("Checksum verify / compare", checksum_verify),
+    "5": ("Crack with John the Ripper", john_crack),
+    "6": ("Crack with hashcat (GPU)", hashcat_crack),
+    "7": ("Generate practice hashes", make_demo_hashes),
+    "8": ("CRC32 / Adler32 checksums", crc_calc),
+    "9": ("HMAC calculator", hmac_calc),
 }

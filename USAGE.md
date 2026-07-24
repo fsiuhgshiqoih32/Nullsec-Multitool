@@ -12,12 +12,13 @@ light up automatically once installed.
 ## 1. Requirements
 
 - **Python 3.10+**
-- Python packages:
+- Python packages (one command):
   ```bash
-  pip install rich pyfiglet requests
+  pip install -r requirements.txt
   ```
-  (`rich` is required; `pyfiglet` just draws the banner; `requests` is used by the
-  web/OSINT modules.)
+  Core is just `rich` + `requests`; `pyfiglet` draws the banner. The optional extras
+  `cryptography`, `pillow`, and `dnspython` unlock a few tools (AES/RSA lab, image
+  stego + EXIF, richer DNS) and degrade gracefully with an install hint when absent.
 - **Optional:** WSL (Windows) or a Linux box for the external command-line tools.
 
 ---
@@ -56,8 +57,8 @@ You should see the **nullsec** banner and a grid of module panels.
 
 ## 3. Driving the interface
 
-The home screen groups every module into panels (RECON, ATTACK, CRYPTO/STEGO,
-WORDLISTS, FORENSICS, SYSTEM). Each entry has a status dot:
+The home screen groups every module into panels (RECON/OSINT, ATTACK, CRYPTO/STEGO,
+WORDLISTS, APPS/CLOUD, FORENSICS, DEFENSE, SYSTEM). Each entry has a status dot:
 
 - **●** ready (built-in, or its external tool is installed)
 - **◐** some of its tools are installed
@@ -68,16 +69,17 @@ At the `nullsec >` prompt you can type:
 | Input | Does |
 |-------|------|
 | a module key (`c`, `3`, `o`, `w`…) | opens that module |
-| `search <term>` | searches the ~2,900-tool catalog + modules |
+| `search <term>` | search the catalog **and** module tools, then jump straight into one |
 | `use <tool>` | shows a catalogued tool's install/details |
 | `help` / `?` | command list |
 | `version` | build info |
 | `r` / `t` | session report / external-tool status |
 | `q` | quit |
 
-Inside a module you get numbered options; type the number, or `b` to go back.
-Findings from many modules auto-log to the **session report** (`r`), which you can
-save as Markdown or HTML.
+Inside a module you get numbered options; type the number, `b`/`/` to return to the
+home grid, `q` to quit, or `?` for help. The home screen also shows a **recent** row
+so you can jump back to what you last used. Findings from many modules auto-log to
+the **session report** (`r`), which you can save as Markdown or HTML.
 
 > Tip: don't paste menu lines (the ones with `│`) back into your shell — type the
 > option key at nullsec's own prompt.
@@ -93,6 +95,9 @@ save as Markdown or HTML.
 - **Generators** → `g` → `7` — check a password against Have-I-Been-Pwned (safely).
 - **OSINT** → `o` → `1` — raw-packet DNS lookups.
 - **Steganography** → `s` — hide/extract data (and files) in text and images.
+- **Encoding Recipe** → `0` → `1` — chain transforms (from-base64, gunzip, xor:key…) CyberChef-style.
+- **Data Extractor** → `z` — paste logs/text; harvest IPs, URLs, hashes, JWTs, and API keys.
+- **Email / Phishing** → `j` → `5` — generate typosquat domains for a target.
 
 ---
 
@@ -140,10 +145,13 @@ Everything else in nullsec works without it.
 
 ```
 nullsec/
-  main.py            # launcher + REPL
-  toolkit/           # one module per capability
-    arsenal.dat      # base64 payload data (loaded at runtime)
-  data/tools.json    # the tool catalog
+  main.py              # launcher + REPL
+  requirements.txt     # core deps + optional extras
+  toolkit/             # one module per capability
+    arsenal.dat        # base64 payload data (loaded at runtime)
+  data/tools.json      # the tool catalog
+  data/state.json      # remembers your recent modules
+  tests/test_smoke.py  # wiring checks (python tests/test_smoke.py)
 ```
 
 Adding a tool = write one function and add a line to a module's `MENU` dict.

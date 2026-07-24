@@ -7,7 +7,8 @@ from urllib.parse import urlparse
 
 import requests
 
-from .utils import console, header, pause, report, require_tool, run_external
+from .utils import (console, header, pause, report, require_tool, run_external,
+                    run_tool, soft_require)
 
 requests.packages.urllib3.disable_warnings()  # we intentionally allow self-signed in labs
 
@@ -346,6 +347,252 @@ def ssrf_test() -> None:
     pause()
 
 
+def git_exposed() -> None:
+    header("Exposed .git", "Detect a leaked .git directory (source disclosure)")
+    url = _normalize(console.input("Base URL: ").strip()).rstrip("/")
+    for path in ("/.git/HEAD", "/.git/config"):
+        try:
+            r = requests.get(url + path, timeout=8, verify=False)
+        except requests.RequestException as e:
+            console.print(f"[red]{e}[/]")
+            break
+        if r.status_code == 200 and ("ref:" in r.text or "[core]" in r.text):
+            console.print(f"[red][!] exposed:[/] {url + path}")
+            console.print(f"[dim]dump it: git-dumper {url}/.git/ out[/]")
+            report.log("web", f"Exposed .git {url}", [f"- {path} readable"])
+            return pause()
+    console.print("[green]No exposed .git found.[/]")
+    pause()
+
+
+TAKEOVER_FP = {
+    "GitHub Pages": "There isn't a GitHub Pages site here",
+    "AWS S3": "NoSuchBucket",
+    "Heroku": "No such app",
+    "Fastly": "Fastly error: unknown domain",
+    "Shopify": "Sorry, this shop is currently unavailable",
+    "Tumblr": "Whatever you were looking for doesn't currently exist",
+    "Bitbucket": "Repository not found",
+    "Ghost": "The thing you were looking for is no longer here",
+    "Surge.sh": "project not found",
+    "Zendesk": "Help Center Closed",
+    "Pantheon": "The gods are wise, but do not know of the site",
+}
+
+
+def subdomain_takeover() -> None:
+    header("Subdomain takeover", "Check a host for a dangling CNAME to an unclaimed service")
+    host = console.input("Subdomain (e.g. blog.example.com): ").strip()
+    body = ""
+    for scheme in ("https://", "http://"):
+        try:
+            body = requests.get(scheme + host, timeout=8, verify=False,
+                                allow_redirects=True).text
+            break
+        except requests.RequestException:
+            continue
+    hits = [svc for svc, fp in TAKEOVER_FP.items() if fp.lower() in body.lower()]
+    if hits:
+        console.print(f"[red][!] possible takeover -> {', '.join(hits)}[/] "
+                      "(host resolves to an unclaimed provider).")
+        report.log("web", f"Subdomain takeover {host}", [f"- fingerprint: {', '.join(hits)}"])
+    else:
+        console.print("[green]No known takeover fingerprint in the response.[/]")
+    pause()
+
+
+def _yn(ok: bool) -> str:
+    return "[green]yes[/]" if ok else "[red]no[/]"
+
+
+def cookie_audit() -> None:
+    header("Cookie flags audit", "Check Set-Cookie for Secure / HttpOnly / SameSite")
+    url = _normalize(console.input("URL: ").strip())
+    try:
+        r = requests.get(url, timeout=8, verify=False, allow_redirects=True)
+    except requests.RequestException as e:
+        console.print(f"[red]Request failed: {e}[/]")
+        return pause()
+    try:
+        cookies = r.raw.headers.getlist("Set-Cookie")
+    except Exception:
+        cookies = [r.headers["Set-Cookie"]] if "Set-Cookie" in r.headers else []
+    if not cookies:
+        console.print("[yellow]No Set-Cookie headers on this response.[/]")
+        return pause()
+    from rich.table import Table
+    t = Table(title="Cookies")
+    t.add_column("Name", style="bold")
+    t.add_column("Secure")
+    t.add_column("HttpOnly")
+    t.add_column("SameSite")
+    weak = 0
+    for c in cookies:
+        low = c.lower()
+        name = c.split("=", 1)[0].strip()
+        sec = "secure" in low
+        http = "httponly" in low
+        same = low.split("samesite=", 1)[1].split(";", 1)[0] if "samesite=" in low else ""
+        if not (sec and http):
+            weak += 1
+        t.add_row(name, _yn(sec), _yn(http), same or "[red]none[/]")
+    console.print(t)
+    if weak:
+        console.print(f"[yellow][!] {weak} cookie(s) missing Secure/HttpOnly.[/]")
+        report.log("web", f"Cookie audit {r.url}", [f"- {weak} weak cookie(s)"])
+    pause()
+
+
+def csp_eval() -> None:
+    header("CSP evaluator", "Fetch and grade a Content-Security-Policy")
+    url = _normalize(console.input("URL: ").strip())
+    try:
+        r = requests.get(url, timeout=8, verify=False, allow_redirects=True)
+    except requests.RequestException as e:
+        console.print(f"[red]Request failed: {e}[/]")
+        return pause()
+    csp = r.headers.get("Content-Security-Policy", "")
+    if not csp:
+        console.print("[red]No Content-Security-Policy header.[/] No CSP protection "
+                      "against injected scripts.")
+        return pause()
+    console.print(f"[dim]{csp}[/]\n")
+    low = csp.lower()
+    issues = []
+    if "unsafe-inline" in low:
+        issues.append("'unsafe-inline' allows inline scripts (defeats XSS protection)")
+    if "unsafe-eval" in low:
+        issues.append("'unsafe-eval' allows eval()")
+    if "*" in csp:
+        issues.append("wildcard '*' source is over-permissive")
+    if "default-src" not in low:
+        issues.append("no default-src fallback directive")
+    if "object-src" not in low:
+        issues.append("no object-src 'none' (plugin/embed risk)")
+    if "http:" in low:
+        issues.append("allows plaintext http: sources")
+    if issues:
+        for i in issues:
+            console.print(f"[yellow][!] {i}[/]")
+        report.log("web", f"CSP eval {r.url}", [f"- {len(issues)} weaknesses"])
+    else:
+        console.print("[green]No obvious CSP weaknesses.[/]")
+    pause()
+
+
+SENSITIVE_PATHS = [
+    "/.env", "/.git/config", "/.svn/entries", "/.DS_Store", "/.htaccess",
+    "/web.config", "/config.php.bak", "/wp-config.php.bak", "/backup.zip",
+    "/backup.sql", "/db.sql", "/dump.sql", "/database.sql", "/.aws/credentials",
+    "/docker-compose.yml", "/Dockerfile", "/phpinfo.php", "/server-status",
+    "/composer.json", "/package.json", "/.npmrc", "/id_rsa", "/.bash_history",
+]
+
+
+def exposed_files() -> None:
+    header("Sensitive file probe", "Check for leaked config / backup / VCS files")
+    base = _normalize(console.input("Base URL: ").strip()).rstrip("/")
+    from rich.table import Table
+    t = Table(title="Exposed-file scan")
+    t.add_column("Path", style="cyan")
+    t.add_column("Status")
+    t.add_column("Size", justify="right")
+    found = []
+    for path in SENSITIVE_PATHS:
+        try:
+            r = requests.get(base + path, timeout=6, verify=False, allow_redirects=False)
+        except requests.RequestException:
+            continue
+        if r.status_code == 200 and r.content:
+            t.add_row(path, "[red]200 OK[/]", str(len(r.content)))
+            found.append(path)
+        elif r.status_code in (401, 403):
+            t.add_row(path, f"[yellow]{r.status_code}[/]", "-")
+    console.print(t)
+    if found:
+        console.print(f"[red][!] {len(found)} file(s) returned 200 -- review them.[/]")
+        report.log("web", f"Exposed files {base}", [f"- {p}" for p in found])
+    else:
+        console.print("[green]No sensitive files returned 200.[/]")
+    pause()
+
+
+def graphql_introspection() -> None:
+    header("GraphQL introspection", "Ask a GraphQL endpoint to describe its schema")
+    url = _normalize(console.input("GraphQL endpoint URL: ").strip())
+    query = {"query": "{__schema{types{name kind}queryType{name}mutationType{name}}}"}
+    try:
+        r = requests.post(url, json=query, timeout=10, verify=False)
+        data = r.json()
+    except Exception as e:
+        console.print(f"[red]Request/parse failed: {e}[/]")
+        return pause()
+    schema = (data.get("data") or {}).get("__schema")
+    if not schema:
+        console.print("[green]Introspection disabled or not GraphQL.[/] "
+                      f"[dim]{str(data)[:160]}[/]")
+        return pause()
+    types = [ty for ty in schema.get("types", []) if not ty["name"].startswith("__")]
+    console.print(f"[red][!] Introspection is ENABLED[/] -- {len(types)} types exposed.")
+    console.print(f"queryType: {schema.get('queryType')}  "
+                  f"mutationType: {schema.get('mutationType')}")
+    for ty in types[:40]:
+        console.print(f"  [cyan]{ty['kind']:12}[/] {ty['name']}")
+    report.log("web", f"GraphQL introspection {url}", [f"- enabled, {len(types)} types"])
+    pause()
+
+
+def redirect_chain() -> None:
+    header("Redirect chain", "Follow and display every hop of a redirect")
+    url = _normalize(console.input("URL: ").strip())
+    try:
+        r = requests.get(url, timeout=8, verify=False, allow_redirects=True)
+    except requests.RequestException as e:
+        console.print(f"[red]Request failed: {e}[/]")
+        return pause()
+    hops = list(r.history) + [r]
+    for i, h in enumerate(hops):
+        arrow = "" if i == 0 else "-> "
+        loc = h.headers.get("Location", "")
+        console.print(f"  {arrow}[bold]{h.status_code}[/] [cyan]{h.url}[/]"
+                      + (f"  [dim](Location: {loc})[/]" if loc else ""))
+    if len(hops) > 1:
+        console.print(f"\n{len(hops) - 1} redirect(s) to final: [green]{r.url}[/]")
+    else:
+        console.print("[green]No redirects.[/]")
+    pause()
+
+
+def sqlmap_scan() -> None:
+    header("sqlmap", "Automated SQL injection & DB takeover (native or WSL)")
+    if not soft_require("sqlmap", "apt install sqlmap  /  pip install sqlmap"):
+        return pause()
+    url = _normalize(console.input("Target URL (include a param, e.g. ?id=1): ").strip())
+    level = console.input("Level 1-5 [1]: ").strip() or "1"
+    risk = console.input("Risk 1-3 [1]: ").strip() or "1"
+    extra = console.input("Extra flags [--batch]: ").strip() or "--batch"
+    run_tool("sqlmap", ["-u", url, "--level", level, "--risk", risk, *extra.split()])
+    pause()
+
+
+def nikto_scan() -> None:
+    header("Nikto", "Web-server vulnerability scanner (native or WSL)")
+    if not soft_require("nikto", "apt install nikto"):
+        return pause()
+    url = _normalize(console.input("Target URL: ").strip())
+    run_tool("nikto", ["-h", url])
+    pause()
+
+
+def whatweb_scan() -> None:
+    header("WhatWeb", "Fingerprint web technologies (native or WSL)")
+    if not soft_require("whatweb", "apt install whatweb"):
+        return pause()
+    url = _normalize(console.input("Target URL: ").strip())
+    run_tool("whatweb", ["-a", "3", url])
+    pause()
+
+
 MENU = {
     "1": ("HTTP header + security audit", headers_audit),
     "2": ("TLS certificate inspector", tls_info),
@@ -358,4 +605,14 @@ MENU = {
     "9": ("SSTI probe", ssti_test),
     "10": ("Open-redirect probe", open_redirect_test),
     "11": ("SSRF probe", ssrf_test),
+    "12": ("Exposed .git check", git_exposed),
+    "13": ("Subdomain takeover check", subdomain_takeover),
+    "14": ("Cookie flags audit", cookie_audit),
+    "15": ("CSP evaluator", csp_eval),
+    "16": ("Sensitive file probe", exposed_files),
+    "17": ("GraphQL introspection", graphql_introspection),
+    "18": ("Redirect chain tracer", redirect_chain),
+    "19": ("sqlmap (SQLi automation)", sqlmap_scan),
+    "20": ("Nikto web-server scan", nikto_scan),
+    "21": ("WhatWeb fingerprint", whatweb_scan),
 }

@@ -109,7 +109,65 @@ def _leet(s: str) -> str:
     return s.translate(str.maketrans("aoeiAOEI", "@0315@031"))
 
 
+def cupp_profiler() -> None:
+    header("Target profiler", "Build a personalized wordlist from known details (CUPP-style)")
+    info = {
+        "name": Prompt.ask("First name", default="").lower().strip(),
+        "surname": Prompt.ask("Surname", default="").lower().strip(),
+        "nick": Prompt.ask("Nickname", default="").lower().strip(),
+        "partner": Prompt.ask("Partner/child name", default="").lower().strip(),
+        "pet": Prompt.ask("Pet name", default="").lower().strip(),
+        "company": Prompt.ask("Company/keyword", default="").lower().strip(),
+    }
+    years = Prompt.ask("Important years (comma-sep, e.g. 1990,2015)", default="").strip()
+    words = {v for v in info.values() if v}
+    if not words:
+        console.print("[yellow]Give at least one detail.[/]")
+        return pause()
+    yrs = [y.strip() for y in years.split(",") if y.strip()]
+    suffixes = ["", "!", "@", "#", "1", "123", "1234", ".", "_"] + yrs + [y[-2:] for y in yrs]
+    leet = str.maketrans("aoeis", "@0315")
+    base = set(words) | {a + b for a in words for b in words if a != b}
+    results = set()
+    for w in base:
+        for v in {w, w.capitalize(), w.upper(), w.translate(leet), w.capitalize().translate(leet)}:
+            for suf in suffixes:
+                results.add(v + suf)
+    results = sorted(x for x in results if 3 <= len(x) <= 32)
+    out = Path.cwd() / "profile_wordlist.txt"
+    out.write_text("\n".join(results) + "\n", encoding="utf-8")
+    console.print(f"Generated [bold]{len(results)}[/] candidates -> [cyan]{out}[/]")
+    console.print("[dim]Authorized testing only. Feed to John/hashcat as a --wordlist.[/]")
+    pause()
+
+
+def policy_check() -> None:
+    header("Password policy check", "Does a password meet a configurable policy?")
+    pw = Prompt.ask("Password (throwaway)")
+    try:
+        minlen = int(Prompt.ask("Minimum length", default="12"))
+    except ValueError:
+        minlen = 12
+    checks = [
+        (f">= {minlen} characters", len(pw) >= minlen),
+        ("has lowercase", any(c.islower() for c in pw)),
+        ("has uppercase", any(c.isupper() for c in pw)),
+        ("has a digit", any(c.isdigit() for c in pw)),
+        ("has a symbol", any(not c.isalnum() for c in pw)),
+        ("not a common password", pw.lower() not in COMMON),
+    ]
+    t = Table(show_header=False, box=None)
+    for name, ok in checks:
+        t.add_row("[green]PASS[/]" if ok else "[red]FAIL[/]", name)
+    console.print(t)
+    passed = sum(1 for _, ok in checks if ok)
+    console.print(f"\n[bold]{passed}/{len(checks)}[/] requirements met.")
+    pause()
+
+
 MENU = {
     "1": ("Password strength / entropy", strength),
     "2": ("Targeted wordlist generator", wordlist_gen),
+    "3": ("Target profiler (CUPP-style wordlist)", cupp_profiler),
+    "4": ("Password policy checker", policy_check),
 }

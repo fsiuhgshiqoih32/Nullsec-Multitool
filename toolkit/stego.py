@@ -219,6 +219,87 @@ def file_extract() -> None:
     pause()
 
 
+def png_hide() -> None:
+    header("PNG LSB steg - hide", "Embed a message in PNG pixel low-bits (needs pillow)")
+    from .utils import need_lib
+    if not need_lib("PIL", "pillow"):
+        return pause()
+    from PIL import Image
+    src = Path(Prompt.ask("Cover PNG path").strip('"'))
+    if not src.is_file():
+        console.print("[red]File not found.[/]")
+        return pause()
+    secret = Prompt.ask("Secret message").encode()
+    payload = struct.pack(">I", len(secret)) + secret
+    bits = [(byte >> i) & 1 for byte in payload for i in range(7, -1, -1)]
+    try:
+        img = Image.open(src).convert("RGB")
+    except Exception as e:
+        console.print(f"[red]Couldn't open image: {e}[/]")
+        return pause()
+    flat = [c for pixel in img.getdata() for c in pixel]
+    if len(bits) > len(flat):
+        console.print(f"[red]Too big: need {len(bits)} bits, capacity {len(flat)}.[/]")
+        return pause()
+    for i, bit in enumerate(bits):
+        flat[i] = (flat[i] & 0xFE) | bit
+    img.putdata([tuple(flat[i:i + 3]) for i in range(0, len(flat), 3)])
+    out = src.with_name(src.stem + "_stego.png")
+    img.save(out, "PNG")
+    console.print(f"[green]Hid {len(secret)} bytes -> {out}[/]")
+    report.log("stego", "PNG LSB hide", [f"- {len(secret)} bytes into {out.name}"])
+    pause()
+
+
+def png_extract() -> None:
+    header("PNG LSB steg - extract", "Recover a message from PNG pixel low-bits")
+    from .utils import need_lib
+    if not need_lib("PIL", "pillow"):
+        return pause()
+    from PIL import Image
+    src = Path(Prompt.ask("Stego PNG path").strip('"'))
+    if not src.is_file():
+        console.print("[red]File not found.[/]")
+        return pause()
+    try:
+        img = Image.open(src).convert("RGB")
+    except Exception as e:
+        console.print(f"[red]Couldn't open image: {e}[/]")
+        return pause()
+    lsb = [c & 1 for pixel in img.getdata() for c in pixel]
+    length = int.from_bytes(_bytes_from_bits(lsb[:32]), "big")
+    if length <= 0 or length * 8 > len(lsb) - 32:
+        console.print("[yellow]No valid hidden length -- probably no message here.[/]")
+        return pause()
+    msg = _bytes_from_bits(lsb[32:32 + length * 8])
+    console.print(f"[bold green]Hidden message ({length} bytes):[/] "
+                  f"{msg.decode(errors='replace')}")
+    pause()
+
+
+def img_strip() -> None:
+    header("Strip image metadata", "Re-save an image with no EXIF/metadata (needs pillow)")
+    from .utils import need_lib
+    if not need_lib("PIL", "pillow"):
+        return pause()
+    from PIL import Image
+    src = Path(Prompt.ask("Image path").strip('"'))
+    if not src.is_file():
+        console.print("[red]File not found.[/]")
+        return pause()
+    try:
+        img = Image.open(src)
+        clean = Image.new(img.mode, img.size)
+        clean.putdata(list(img.getdata()))
+        out = src.with_name(src.stem + "_clean" + src.suffix)
+        clean.save(out)
+    except Exception as e:
+        console.print(f"[red]Failed: {e}[/]")
+        return pause()
+    console.print(f"[green]Saved metadata-free copy -> {out}[/]")
+    pause()
+
+
 MENU = {
     "1": ("Zero-width text: hide", zw_hide),
     "2": ("Zero-width text: extract", zw_extract),
@@ -228,4 +309,7 @@ MENU = {
     "6": ("Image (BMP LSB): extract", bmp_extract),
     "7": ("Hide a FILE in an image (exe/any)", file_embed),
     "8": ("Extract a hidden file", file_extract),
+    "9": ("Image (PNG LSB): hide", png_hide),
+    "10": ("Image (PNG LSB): extract", png_extract),
+    "11": ("Strip image metadata", img_strip),
 }

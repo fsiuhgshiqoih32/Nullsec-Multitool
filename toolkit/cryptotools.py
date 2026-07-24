@@ -11,7 +11,7 @@ from collections import Counter
 from rich.prompt import Prompt
 from rich.table import Table
 
-from .utils import console, header, pause, report
+from .utils import console, header, need_lib, pause, report
 
 # English letter frequencies (%) for chi-squared / scoring.
 ENGLISH_FREQ = {
@@ -395,6 +395,149 @@ def jwt_crack() -> None:
     pause()
 
 
+def jwt_forge() -> None:
+    header("JWT forge", "Craft an alg:none token / tamper claims (tests weak validation)")
+
+    def b64u(b):
+        return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+    tok = Prompt.ask("Original JWT (blank to build a fresh one)", default="").strip()
+    payload = {"user": "admin"}
+    if tok.count(".") == 2:
+        try:
+            payload = json.loads(base64.urlsafe_b64decode(
+                tok.split(".")[1] + "=" * (-len(tok.split(".")[1]) % 4)))
+        except Exception:
+            pass
+    console.print(f"[dim]payload: {json.dumps(payload)}[/]")
+    if Prompt.ask("Edit a claim?", choices=["y", "n"], default="y") == "y":
+        k = Prompt.ask("Claim key", default="role")
+        v = Prompt.ask("Claim value", default="admin")
+        payload[k] = v
+    head = b64u(json.dumps({"alg": "none", "typ": "JWT"}).encode())
+    body = b64u(json.dumps(payload).encode())
+    forged = f"{head}.{body}."
+    console.print(f"\n[bold green]{forged}[/]")
+    console.print("[dim]Works only where the server accepts alg:none (unsigned). "
+                  "For HS256 targets, crack the secret (option 8) and re-sign.[/]")
+    report.log("cipher", "JWT forge (alg:none)", [f"- payload: {json.dumps(payload)}"])
+    pause()
+
+
+def _factor_n(n: int):
+    """Factor a weak RSA modulus: trial division then Fermat. Returns (p,q)|None."""
+    if n % 2 == 0:
+        return 2, n // 2
+    i = 3
+    while i * i <= n and i < 5_000_000:
+        if n % i == 0:
+            return i, n // i
+        i += 2
+    a = math.isqrt(n)
+    if a * a < n:
+        a += 1
+    for _ in range(200_000):
+        b2 = a * a - n
+        b = math.isqrt(b2)
+        if b * b == b2:
+            return a - b, a + b
+        a += 1
+    return None
+
+
+def rsa_lab() -> None:
+    header("RSA lab", "Factor a weak modulus, derive d, optionally decrypt")
+    try:
+        n = int(Prompt.ask("Modulus n").strip())
+        e = int(Prompt.ask("Public exponent e", default="65537").strip())
+    except ValueError:
+        console.print("[red]n and e must be integers.[/]")
+        return pause()
+    console.print("[dim]Trying trial division + Fermat (works on small/close primes)...[/]")
+    fac = _factor_n(n)
+    if not fac:
+        console.print("[yellow]Couldn't factor n -- it's not obviously weak. "
+                      "For real attacks try RsaCtfTool.[/]")
+        return pause()
+    p, q = fac
+    phi = (p - 1) * (q - 1)
+    try:
+        d = pow(e, -1, phi)
+    except ValueError:
+        console.print("[red]e is not invertible mod phi(n) -- bad key.[/]")
+        return pause()
+    console.print(f"[green]p =[/] {p}")
+    console.print(f"[green]q =[/] {q}")
+    console.print(f"[green]d =[/] {d}")
+    report.log("cipher", "RSA weak-modulus factored", [f"- n={n}", f"- d={d}"])
+    c = Prompt.ask("Ciphertext integer c (blank to skip)", default="").strip()
+    if c:
+        try:
+            m = pow(int(c), d, n)
+        except ValueError:
+            console.print("[red]c must be an integer.[/]")
+            return pause()
+        raw = m.to_bytes((m.bit_length() + 7) // 8, "big")
+        console.print(f"[bold green]m (int)  =[/] {m}")
+        console.print(f"[bold green]m (bytes)=[/] {raw.decode(errors='replace')}")
+    pause()
+
+
+def _key_bytes(s: str) -> bytes:
+    s = s.strip()
+    if s.startswith("hex:"):
+        return bytes.fromhex(s[4:].replace(" ", ""))
+    return s.encode()
+
+
+def aes_tool() -> None:
+    header("AES", "ECB/CBC encrypt or decrypt (needs the 'cryptography' library)")
+    if not need_lib("cryptography", "cryptography"):
+        return pause()
+    from cryptography.hazmat.primitives import padding
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    action = Prompt.ask("[e]ncrypt or [d]ecrypt", choices=["e", "d"], default="d")
+    mode_name = Prompt.ask("Mode", choices=["ecb", "cbc"], default="cbc")
+    key = _key_bytes(Prompt.ask("Key (text, or 'hex:...')"))
+    if len(key) not in (16, 24, 32):
+        console.print(f"[red]AES key must be 16/24/32 bytes (got {len(key)}).[/]")
+        return pause()
+    iv = b"\x00" * 16
+    if mode_name == "cbc":
+        iv = _key_bytes(Prompt.ask("IV (text or 'hex:...')", default="hex:" + "00" * 16))
+        if len(iv) != 16:
+            console.print("[red]IV must be exactly 16 bytes.[/]")
+            return pause()
+    mode = modes.ECB() if mode_name == "ecb" else modes.CBC(iv)
+    cipher = Cipher(algorithms.AES(key), mode)
+    if action == "d":
+        blob = _read_bytes("Ciphertext")
+        if blob is None:
+            return pause()
+        dec = cipher.decryptor()
+        try:
+            padded = dec.update(blob) + dec.finalize()
+        except Exception as ex:
+            console.print(f"[red]Decrypt failed: {ex}[/]")
+            return pause()
+        try:
+            unpad = padding.PKCS7(128).unpadder()
+            out = unpad.update(padded) + unpad.finalize()
+        except Exception:
+            out = padded  # not PKCS7-padded; show raw
+        console.print(f"[bold green]{out.decode(errors='replace')}[/]")
+        console.print(f"[dim]hex: {out.hex()}[/]")
+    else:
+        pt = Prompt.ask("Plaintext").encode()
+        pad = padding.PKCS7(128).padder()
+        padded = pad.update(pt) + pad.finalize()
+        enc = cipher.encryptor()
+        out = enc.update(padded) + enc.finalize()
+        console.print(f"[bold green]b64:[/] {base64.b64encode(out).decode()}")
+        console.print(f"[green]hex:[/] {out.hex()}")
+    pause()
+
+
 MENU = {
     "1": ("Repeating-key XOR breaker", xor_repeating_break),
     "2": ("Vigenere breaker", vigenere_break),
@@ -404,4 +547,7 @@ MENU = {
     "6": ("Base58 encode/decode", base58_tool),
     "7": ("JWT decode + analyze", jwt_tool),
     "8": ("JWT HMAC secret cracker", jwt_crack),
+    "9": ("JWT forge (alg:none)", jwt_forge),
+    "10": ("RSA lab (factor weak n, decrypt)", rsa_lab),
+    "11": ("AES encrypt/decrypt (ECB/CBC)", aes_tool),
 }

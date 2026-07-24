@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
+from pathlib import Path
 
 # Enable ANSI colors on legacy Windows terminals, and make output UTF-8 so
 # box glyphs / symbols don't crash on a cp1252 console.
@@ -20,10 +22,11 @@ from rich.table import Table
 from rich.text import Text
 
 from toolkit import (__version__, adattacks, arsenal, bruteforce, catalog,
-                     crypto, cryptotools, forensics, generators, hashes,
-                     installer, interceptor, lolbins, metadata, network, osint,
-                     passwords, payloadenc, recon, stego, vulnscan, web,
-                     wordlists)
+                     cloud, crypto, cryptotools, database, detect,
+                     email_analyzer, extractor, forensics, generators, hashes,
+                     installer, interceptor, lolbins, metadata, mobile, network,
+                     osint, passwords, payloadenc, postex, recipe, recon,
+                     reversing, smb, stego, vulnscan, web, wireless, wordlists)
 from toolkit.utils import (IS_WINDOWS, console, detect_tools, get_wsl_distro,
                            probe_tools, render_banner, report, wsl_available)
 
@@ -42,6 +45,13 @@ CATEGORIES = {
     "v": ("Vuln Scan", vulnscan.MENU, "Nuclei ~9,000 templates: browse/search/scan"),
     "a": ("AD Attacks", adattacks.MENU, "Kerberoast / AS-REP roast (Impacket)"),
     "l": ("LOLBins", lolbins.MENU, "GTFOBins / LOLBAS abuse lookup"),
+    "k": ("Wireless", wireless.MENU, "WPA/PMKID crack + capture guides"),
+    "n": ("SMB / Shares", smb.MENU, "Enumerate SMB shares/users (netexec/smbmap)"),
+    "x": ("Post-Exploitation", postex.MENU, "Privesc enum, NTLM relay, spray, pivot"),
+    "b": ("Databases", database.MENU, "Exposed DB scan, MSSQL xp_cmdshell, brute"),
+    "u": ("Cloud", cloud.MENU, "Metadata SSRF, prowler/pacu, trivy, k8s"),
+    "y": ("Mobile", mobile.MENU, "APK decode/decompile, secret hunt, Frida"),
+    "e": ("Reversing", reversing.MENU, "radare2/rabin2, ROP, RE cheat sheet"),
     "c": ("Cipher Lab", cryptotools.MENU, "XOR/Vigenere breakers, Morse, JWT crack"),
     "f": ("Forensics", forensics.MENU, "strings, carver, entropy, secret scanner"),
     "o": ("OSINT & DNS", osint.MENU, "Raw DNS, WHOIS, CIDR, favicon hash, dorks"),
@@ -51,7 +61,11 @@ CATEGORIES = {
     "s": ("Steganography", stego.MENU, "Hide/extract data in text & images"),
     "p": ("Payload Forge", payloadenc.MENU, "Encoders, XSS/SQLi, shell stabilization"),
     "h": ("HTTP Interceptor", interceptor.MENU, "Catch-all listener, file server, repeater"),
+    "d": ("Detection", detect.MENU, "Sigma/YARA rules, scan, detection matrix"),
     "i": ("Install Arsenal", installer.MENU, "Install the real tools (WSL BlackArch)"),
+    "j": ("Email / Phishing", email_analyzer.MENU, "Parse .eml, SPF/DKIM/DMARC, defang, typosquat"),
+    "z": ("Data Extractor", extractor.MENU, "Harvest IOCs (IPs/URLs/hashes/keys) from text"),
+    "0": ("Encoding Recipe", recipe.MENU, "Chain transforms CyberChef-style"),
 }
 
 # System pseudo-entries (handled specially, not real categories).
@@ -60,11 +74,12 @@ SYSTEM_ITEMS = {"r": "Session Report", "t": "Tool Status", "q": "Quit"}
 # External tools each category can drive. Categories not listed are pure built-in
 # (always ready). Used for the live installed-tools indicator.
 CATEGORY_DEPS = {
-    "1": ["nmap"],
+    "1": ["nmap", "masscan"],
     "2": ["john", "hashcat"],
-    "5": ["ffuf", "gobuster"],
+    "5": ["ffuf", "gobuster", "sqlmap", "nikto"],
     "8": ["searchsploit", "nuclei", "msfconsole"],
     "9": ["hydra"],
+    "o": ["subfinder"],
 }
 
 _probe_cache: dict | None = None
@@ -91,11 +106,14 @@ def _cat_dot(key: str) -> str:
 
 # Home layout: (section title, colour, [category keys]).
 GROUPS = [
-    ("RECON / OSINT", "cyan", ["1", "6", "o", "m", "8"]),
-    ("ATTACK", "red", ["7", "9", "v", "a", "5", "p", "h", "l"]),
-    ("CRYPTO / STEGO", "magenta", ["3", "c", "2", "s"]),
+    ("RECON / OSINT", "cyan", ["1", "6", "o", "m", "8", "j"]),
+    ("WEB / EXPLOIT", "red", ["5", "p", "h", "7", "9", "v", "l"]),
+    ("AD / NETWORK", "red", ["a", "n", "x", "k"]),
+    ("DATA / CLOUD", "bright_blue", ["b", "u", "y"]),
+    ("CRYPTO / STEGO", "magenta", ["3", "c", "2", "s", "0"]),
     ("WORDLISTS", "yellow", ["4", "g", "w"]),
-    ("FORENSICS", "green", ["f"]),
+    ("FORENSICS / DFIR", "green", ["f", "e", "z"]),
+    ("DEFENSE", "green", ["d"]),
     ("SYSTEM", "blue", ["i", "r", "t", "q"]),
 ]
 
@@ -128,36 +146,67 @@ def _banner_block() -> str:
     ])
 
 
-def _group_panel(title: str, colour: str, keys: list[str]) -> Panel:
+def _group_block(title: str, colour: str, keys: list[str]) -> Table:
     tbl = Table(show_header=False, box=None, padding=(0, 1, 0, 0))
-    tbl.add_column(no_wrap=True)                              # dot
-    tbl.add_column(justify="right", style=f"bold {colour}", no_wrap=True)  # key
-    tbl.add_column(no_wrap=True)                              # name
+    tbl.add_column(justify="right", style=f"bold {colour}", no_wrap=True)
+    tbl.add_column(no_wrap=True)
+    tbl.add_row("", f"[bold {colour}]{title}[/]")
     for k in keys:
-        if k in CATEGORIES:
-            name, menu, _ = CATEGORIES[k]
-            tbl.add_row(_cat_dot(k), k, f"{name} [dim]{len(menu)}[/]")
-        else:
-            tbl.add_row(" ", k, f"[dim]{SYSTEM_ITEMS[k]}[/]")
-    return Panel(tbl, title=f"[bold {colour}]{title}[/]", border_style=colour,
-                 box=box.ROUNDED, padding=(0, 1))
+        label = CATEGORIES[k][0] if k in CATEGORIES else SYSTEM_ITEMS[k]
+        tbl.add_row(k, label)
+    return tbl
+
+
+_STATE_FILE = Path(__file__).resolve().parent / "data" / "state.json"
+
+
+def _load_recent() -> list[str]:
+    try:
+        return json.loads(_STATE_FILE.read_text(encoding="utf-8")).get("recent", [])
+    except Exception:
+        return []
+
+
+def _push_recent(key: str) -> None:
+    recent = [k for k in _load_recent() if k != key]
+    recent.insert(0, key)
+    try:
+        _STATE_FILE.parent.mkdir(exist_ok=True)
+        _STATE_FILE.write_text(json.dumps({"recent": recent[:6]}), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _module_matches(term: str) -> list[tuple[str, str, str, str]]:
+    """Search module menu labels -> (cat_key, cat_name, sub_key, label)."""
+    term = term.lower()
+    out = []
+    for ckey, (cname, menu, _d) in CATEGORIES.items():
+        for skey, (label, _fn) in menu.items():
+            if term in label.lower() or term in cname.lower():
+                out.append((ckey, cname, skey, label))
+    return out
 
 
 def show_home() -> None:
     console.clear()
     console.print(Text(BANNER.rstrip("\n"), style="bold green"))
+    console.print(f"[bright_black]  v{__version__} · {len(CATEGORIES)} modules · "
+                  f"{_total_tools()} tools · by anonymous[/]")
     console.print()
-    console.print(Columns([_group_panel(*g) for g in GROUPS],
-                          equal=True, expand=True))
-    console.print("[bright_black]  ● ready  ◐ partial  ○ needs-install   ·   "
-                  "key = open module  ·  'search <term>'  ·  'help'[/]")
+    console.print(Columns([_group_block(*g) for g in GROUPS], padding=(1, 4)))
+    recent = [k for k in _load_recent() if k in CATEGORIES]
+    if recent:
+        console.print("\n[bright_black]  recent:[/] "
+                      + "   ".join(f"[cyan]{k}[/] {CATEGORIES[k][0]}" for k in recent))
+    console.print("\n[bright_black]  key = open   ·   search <term>   ·   help   ·   q = quit[/]")
 
 
 def cmd_help() -> None:
     console.print(Panel(
         "[bold]commands[/]\n"
         "  [cyan]<key>[/]           open a module by its key (e.g. 1, c, o, w)\n"
-        "  [cyan]search <term>[/]   search the tool catalog + modules\n"
+        "  [cyan]search <term>[/]   search catalog + module tools, then jump\n"
         "  [cyan]use <tool>[/]      show a catalogued tool's install/details\n"
         "  [cyan]banner[/]          redraw the banner\n"
         "  [cyan]version[/]         framework version\n"
@@ -172,7 +221,7 @@ def cmd_version() -> None:
     reachable = catalog.indexed_total() + arsenal.payload_count()
     console.print(f"[bold green]nullsec[/] v{__version__}  ·  {_total_tools()} tools / "
                   f"{len(CATEGORIES)} modules  ·  {catalog.local_count():,} cataloged  ·  "
-                  f"{reachable:,} reachable")
+                  f"{reachable:,} reachable  ·  by anonymous")
     console.input("[bright_black][enter][/] ")
 
 
@@ -181,22 +230,40 @@ def cmd_search(term: str) -> None:
     if not term:
         console.print("[yellow]usage: search <term>[/]")
         return console.input("[bright_black][enter][/] ")
+    mod_hits = _module_matches(term)
+    if mod_hits:
+        tbl = Table(title=f"{len(mod_hits)} module tool(s) for '{term}'"
+                    + (" (showing 30)" if len(mod_hits) > 30 else ""))
+        tbl.add_column("open", style="bold green")
+        tbl.add_column("module", style="magenta")
+        tbl.add_column("tool")
+        for ckey, cname, skey, label in mod_hits[:30]:
+            tbl.add_row(f"{ckey} -> {skey}", cname, label)
+        console.print(tbl)
     hits = [t for t in catalog.all_tools()
             if term.lower() in t[0].lower() or term.lower() in t[1].lower()
             or term.lower() in t[2].lower()]
-    if not hits:
+    if hits:
+        tbl = Table(title=f"{len(hits)} catalog tool(s)"
+                    + (" (showing 40)" if len(hits) > 40 else ""))
+        tbl.add_column("tool", style="bold cyan")
+        tbl.add_column("cat", style="magenta")
+        tbl.add_column("install", style="dim", overflow="fold")
+        for name, cat, _desc, install, _binary in hits[:40]:
+            tbl.add_row(name, cat, install)
+        console.print(tbl)
+    if not mod_hits and not hits:
         console.print(f"[yellow]no matches for '{term}'[/]")
         return console.input("[bright_black][enter][/] ")
-    tbl = Table(title=f"{len(hits)} matches for '{term}'"
-                + (" (showing 40)" if len(hits) > 40 else ""))
-    tbl.add_column("tool", style="bold cyan")
-    tbl.add_column("cat", style="magenta")
-    tbl.add_column("install", style="dim", overflow="fold")
-    for name, cat, _desc, install, _binary in hits[:40]:
-        tbl.add_row(name, cat, install)
-    console.print(tbl)
-    console.print("[bright_black]details: open Tool Catalog (8) -> search[/]")
-    console.input("[bright_black][enter][/] ")
+    if mod_hits:
+        sel = console.input("\n[bright_black]open which module key? (e.g. "
+                            + mod_hits[0][0] + ", enter = back) [/]").strip().lower()
+        if sel in CATEGORIES:
+            _push_recent(sel)
+            run_category(sel, CATEGORIES[sel][0], CATEGORIES[sel][1])
+            return
+    else:
+        console.input("[bright_black][enter][/] ")
 
 
 def cmd_use(name: str) -> None:
@@ -251,22 +318,24 @@ def show_tool_status() -> None:
     console.input("\n[dim]Press Enter…[/]")
 
 
-def run_category(key: str, name: str, menu: dict) -> None:
+def run_category(key: str, name: str, menu: dict) -> str | None:
     modid = name.split()[0].lower()
     while True:
         console.clear()
         console.print(Text(BANNER.rstrip("\n"), style="bold green"))
-        table = Table(show_header=False, box=None, padding=(0, 2, 0, 0))
-        table.add_column(justify="right", style="bold green", no_wrap=True)
-        table.add_column(no_wrap=True)
+        console.print(f"\n  [bold green]{name}[/]\n")
         for k, (label, _fn) in menu.items():
-            table.add_row(k, label)
-        table.add_row("b", "[bright_black]back[/]")
-        console.print(Panel(table, title=f"[bold]{name}[/]",
-                            border_style="bright_black", box=box.SQUARE, padding=(1, 2)))
-        choice = Prompt.ask(f"[green]nullsec[/]([cyan]{modid}[/]) >").strip().lower()
-        if choice == "b":
-            return
+            console.print(f"    [cyan]{k:>2}[/]  {label}")
+        console.print("    [cyan] b[/]  [bright_black]back[/]   "
+                      "[cyan]/[/] [bright_black]home[/]   [cyan]q[/] [bright_black]quit[/]")
+        choice = Prompt.ask(f"\n[green]nullsec[/]([cyan]{modid}[/]) >").strip().lower()
+        if choice in ("b", "/"):
+            return None
+        if choice in ("q", "quit", "exit"):
+            return "quit"
+        if choice in ("?", "help"):
+            cmd_help()
+            continue
         if choice in menu:
             console.clear()
             try:
@@ -302,7 +371,9 @@ def main() -> None:
             show_tool_status()
         elif choice in CATEGORIES:
             name, menu, _desc = CATEGORIES[choice]
-            run_category(choice, name, menu)
+            _push_recent(choice)
+            if run_category(choice, name, menu) == "quit":
+                return
         else:
             console.print(f"[red]unknown command:[/] {raw}   "
                           "[bright_black](type 'help')[/]")

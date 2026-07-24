@@ -52,9 +52,17 @@ EXTERNAL_TOOLS = {
     "john": ("john", "John the Ripper – password hash cracker", "https://www.openwall.com/john/"),
     "hashcat": ("hashcat", "hashcat – GPU hash cracker", "https://hashcat.net/hashcat/"),
     "nmap": ("nmap", "Nmap – network/port scanner", "https://nmap.org/"),
+    "masscan": ("masscan", "masscan – internet-scale port scanner", "https://github.com/robertdavidgraham/masscan"),
     "ffuf": ("ffuf", "ffuf – web fuzzer / dir brute", "https://github.com/ffuf/ffuf"),
     "gobuster": ("gobuster", "gobuster – dir/dns brute", "https://github.com/OJ/gobuster"),
     "hydra": ("hydra", "hydra – network login brute", "https://github.com/vanhauser-thc/thc-hydra"),
+    "sqlmap": ("sqlmap", "sqlmap – automatic SQL injection", "https://sqlmap.org/"),
+    "nikto": ("nikto", "Nikto – web server scanner", "https://github.com/sullo/nikto"),
+    "whatweb": ("whatweb", "WhatWeb – web tech fingerprinter", "https://github.com/urbanadventurer/WhatWeb"),
+    "subfinder": ("subfinder", "subfinder – passive subdomain enum", "https://github.com/projectdiscovery/subfinder"),
+    "nuclei": ("nuclei", "nuclei – template vuln scanner", "https://github.com/projectdiscovery/nuclei"),
+    "httpx": ("httpx", "httpx – fast HTTP probing", "https://github.com/projectdiscovery/httpx"),
+    "searchsploit": ("searchsploit", "searchsploit – offline Exploit-DB", "https://www.exploit-db.com/searchsploit"),
 }
 
 
@@ -93,6 +101,42 @@ def run_external(cmd: list[str], capture: bool = False) -> subprocess.CompletedP
     """Run an external command, echoing it first so the user sees exactly what ran."""
     console.print(f"[dim]$ {' '.join(cmd)}[/]")
     return subprocess.run(cmd, text=True, capture_output=capture)
+
+
+# --- optional python libraries ---------------------------------------------
+# Some tools use extras (cryptography, pillow, dnspython). They're optional so
+# nullsec keeps running with just rich + requests; missing libs degrade to a
+# one-line install hint instead of crashing.
+
+def optional_import(module: str):
+    """Import an optional dependency, returning the module or None."""
+    import importlib
+    try:
+        return importlib.import_module(module)
+    except Exception:
+        return None
+
+
+def need_lib(module: str, pip_name: str | None = None):
+    """Return an imported optional lib, or None after printing an install hint."""
+    mod = optional_import(module)
+    if mod is None:
+        console.print(f"[yellow]This tool needs the optional '{module}' library.[/] "
+                      f"Install it with [cyan]pip install {pip_name or module}[/]")
+    return mod
+
+
+def soft_require(binary: str, install_hint: str = "") -> tuple[str, str] | None:
+    """Resolve an external tool (native or WSL) for a wrapper, or print a hint.
+
+    Returns the resolve_tool() location tuple ('native'|'wsl', where), or None."""
+    loc = resolve_tool(binary)
+    if loc is None:
+        msg = f"[yellow]{binary}[/] not found natively or in WSL."
+        msg += f" Install: [cyan]{install_hint}[/]" if install_hint else \
+               " Install it (home menu -> i)."
+        console.print(msg)
+    return loc
 
 
 # --- WSL bridge -------------------------------------------------------------

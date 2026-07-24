@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import hashlib
 import secrets
 from collections import defaultdict
@@ -213,6 +214,61 @@ def username_permutator() -> None:
     pause()
 
 
+def date_wordlist() -> None:
+    header("Date wordlist", "Every date in a year range, in common password formats")
+    try:
+        start = int(Prompt.ask("Start year", default="1980"))
+        end = int(Prompt.ask("End year", default="2025"))
+    except ValueError:
+        console.print("[red]Years must be numbers.[/]")
+        return pause()
+    if end < start or end - start > 200:
+        console.print("[red]Bad range.[/]")
+        return pause()
+    out = set()
+    for y in range(start, end + 1):
+        out.add(str(y))
+        for m in range(1, 13):
+            for d in range(1, calendar.monthrange(y, m)[1] + 1):
+                out.add(f"{d:02d}{m:02d}{y}")            # DDMMYYYY
+                out.add(f"{m:02d}{d:02d}{y}")            # MMDDYYYY
+                out.add(f"{y}{m:02d}{d:02d}")            # YYYYMMDD
+                out.add(f"{d:02d}{m:02d}{y % 100:02d}")  # DDMMYY
+    result = sorted(out)
+    path = Path.cwd() / f"dates_{start}_{end}.txt"
+    path.write_text("\n".join(result) + "\n", encoding="utf-8")
+    console.print(f"Wrote [bold]{len(result):,}[/] date strings -> [cyan]{path}[/]")
+    pause()
+
+
+def combinator() -> None:
+    header("Wordlist combinator", "Concatenate every word of A with every word of B")
+    a = Path(Prompt.ask("Wordlist A path").strip('"'))
+    b = Path(Prompt.ask("Wordlist B path").strip('"'))
+    if not a.is_file() or not b.is_file():
+        console.print("[red]Both wordlists must exist.[/]")
+        return pause()
+    sep = Prompt.ask("Separator between words", default="")
+    wa = [x.strip() for x in a.read_text(encoding="utf-8", errors="ignore").splitlines() if x.strip()][:5000]
+    wb = [x.strip() for x in b.read_text(encoding="utf-8", errors="ignore").splitlines() if x.strip()][:5000]
+    cap = 5_000_000
+    if len(wa) * len(wb) > cap:
+        console.print(f"[yellow]{len(wa) * len(wb):,} combos -- capping at {cap:,}.[/]")
+    out = Path.cwd() / "combined_wordlist.txt"
+    count = 0
+    with out.open("w", encoding="utf-8") as f:
+        for x in wa:
+            for y in wb:
+                f.write(f"{x}{sep}{y}\n")
+                count += 1
+                if count >= cap:
+                    break
+            if count >= cap:
+                break
+    console.print(f"Wrote [bold]{count:,}[/] combinations -> [cyan]{out}[/]")
+    pause()
+
+
 MENU = {
     "1": ("Passphrase generator", passphrase),
     "2": ("PIN wordlist", pin_list),
@@ -221,4 +277,6 @@ MENU = {
     "5": ("Markov password generator", markov_gen),
     "6": ("Rule mutator (hashcat-style)", rule_mutator),
     "7": ("Have-I-Been-Pwned check", hibp_check),
+    "8": ("Date wordlist (year range)", date_wordlist),
+    "9": ("Wordlist combinator (A x B)", combinator),
 }

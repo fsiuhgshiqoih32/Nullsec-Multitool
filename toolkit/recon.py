@@ -8,7 +8,8 @@ from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRe
 from rich.prompt import Prompt, IntPrompt
 from rich.table import Table
 
-from .utils import console, header, pause, require_tool, run_external
+from .utils import (console, header, pause, require_tool, run_external, run_tool,
+                    soft_require)
 
 # A small map so results are readable without a full /etc/services parse.
 COMMON_PORTS = {
@@ -138,7 +139,19 @@ def nmap_handoff() -> None:
     pause()
 
 
+def masscan_scan() -> None:
+    header("masscan", "Internet-scale async port scanner (native or WSL; needs root)")
+    if not soft_require("masscan", "apt install masscan"):
+        return pause()
+    target = Prompt.ask("Target (IP or CIDR)")
+    ports = Prompt.ask("Ports", default="1-1000")
+    rate = Prompt.ask("Packets/sec", default="1000")
+    run_tool("masscan", [target, "-p", ports, "--rate", rate])
+    pause()
+
+
 MENU = {
     "1": ("Port scan (built-in, no deps)", port_scan),
     "2": ("Nmap hand-off (needs nmap)", nmap_handoff),
+    "3": ("masscan (fast async scan)", masscan_scan),
 }

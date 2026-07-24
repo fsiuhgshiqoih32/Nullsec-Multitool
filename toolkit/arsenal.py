@@ -12,7 +12,7 @@ from .utils import console, header, pause, report
 _DAT = Path(__file__).resolve().parent / "arsenal.dat"
 try:
     _DATA = json.loads(base64.b64decode(_DAT.read_bytes()))
-except (FileNotFoundError, ValueError):
+except (OSError, ValueError):
     # arsenal.dat missing/unreadable (often AV quarantine) — degrade gracefully
     # so the rest of nullsec still runs instead of failing to import.
     _DATA = {"reverse": {}, "bind": {}, "web": {}, "msf": {}, "listener": {}}
