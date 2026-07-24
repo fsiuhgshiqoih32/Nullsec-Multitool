@@ -1,4 +1,3 @@
-"""Shared helpers: console, external-tool detection, small UI bits."""
 from __future__ import annotations
 
 import platform

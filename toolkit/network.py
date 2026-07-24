@@ -1,4 +1,3 @@
-"""Local network tools: interface info, TCP ping-sweep discovery, rDNS, ARP cache."""
 from __future__ import annotations
 
 import socket

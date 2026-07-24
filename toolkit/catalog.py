@@ -1,6 +1,3 @@
-"""Tool catalog: browse/search a large index of real security tools, detect what's
-installed, launch it, and front-end the giant public databases (Exploit-DB via
-searchsploit, Nuclei, Metasploit) that together expose 50,000+ real modules."""
 from __future__ import annotations
 
 import json

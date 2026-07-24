@@ -1,9 +1,3 @@
-"""Steganography — hide and extract data in text and images. All stdlib.
-
-- zero-width unicode: hide a secret inside innocent-looking cover text
-- whitespace: encode bits as trailing spaces/tabs
-- BMP LSB: embed a message in the low bits of image pixels (from scratch)
-"""
 from __future__ import annotations
 
 import struct

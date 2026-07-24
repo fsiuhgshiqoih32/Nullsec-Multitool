@@ -1,13 +1,3 @@
-"""Document metadata harvester (FOCA-style OSINT).
-
-Public documents routinely leak internal usernames, software versions, and local
-file paths in their metadata. This extracts that from PDFs and Office files (stdlib
-only), aggregates it across a folder, and hands off to exiftool for everything else.
-
-Defensive flip side: the same data tells a blue team what to SCRUB before publishing
-(Office "Inspect Document", `exiftool -all= file`, or `mat2`). Harvest results print
-a scrub reminder for exactly this reason.
-"""
 from __future__ import annotations
 
 import io

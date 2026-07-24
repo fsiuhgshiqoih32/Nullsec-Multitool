@@ -1,9 +1,3 @@
-"""HTTP interceptor tools — catch-all callback listener, file server, repeater.
-
-The listener is a mini interactsh/requestbin: point a blind SSRF, blind XSS, or a
-webhook at it and watch the full requests land. Servers run in a background thread
-and stop when you press Enter.
-"""
 from __future__ import annotations
 
 import socket

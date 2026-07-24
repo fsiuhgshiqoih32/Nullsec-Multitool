@@ -1,6 +1,3 @@
-"""Vulnerability scanning via Nuclei — browse/search ~9,000 templates and scan
-targets you are authorized to test. Runs nuclei natively or through WSL.
-"""
 from __future__ import annotations
 
 import subprocess

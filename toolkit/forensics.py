@@ -1,8 +1,3 @@
-"""Forensics & file tools — all original, all stdlib.
-
-strings, hexdump, magic-byte identification, an embedded-file carver, an entropy
-scanner, UUID/timestamp decoders, and a regex secret scanner.
-"""
 from __future__ import annotations
 
 import math

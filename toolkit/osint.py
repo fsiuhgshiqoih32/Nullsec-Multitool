@@ -1,9 +1,3 @@
-"""OSINT & DNS — original tools, mostly stdlib sockets.
-
-Highlights written from scratch: a DNS resolver that builds/parses raw packets,
-a WHOIS client that follows IANA referrals, and a Shodan-style favicon hash
-(MurmurHash3 implemented by hand).
-"""
 from __future__ import annotations
 
 import base64

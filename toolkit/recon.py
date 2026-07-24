@@ -1,4 +1,3 @@
-"""Reconnaissance: host resolution, a from-scratch TCP port scanner, banner grab."""
 from __future__ import annotations
 
 import socket

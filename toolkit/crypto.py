@@ -1,4 +1,3 @@
-"""Encoding/decoding and classical-cipher breaking — the CTF everyday toolbox."""
 from __future__ import annotations
 
 import base64

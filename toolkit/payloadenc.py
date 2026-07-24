@@ -1,4 +1,3 @@
-"""Payload Forge — encode payloads, generate XSS/SQLi, stabilize shells."""
 from __future__ import annotations
 
 import base64

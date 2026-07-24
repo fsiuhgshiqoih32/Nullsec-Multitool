@@ -1,9 +1,3 @@
-"""
-security-multitool — a menu-driven toolkit for learning offensive & defensive
-security on systems you own or are authorized to test (home lab, CTFs, HTB/THM).
-
-Run:  python main.py
-"""
 from __future__ import annotations
 
 import os

@@ -1,11 +1,3 @@
-"""Payload arsenal: generate reverse/bind/web shells, msfvenom cmds, listeners.
-
-Payload templates are stored base64-encoded in arsenal.dat and decoded at import.
-That is deliberate: a plaintext file full of reverse-shell one-liners gets
-false-flagged and quarantined by antivirus, which would silently break the tool.
-Encoding the local data file keeps nullsec intact; it is not payload obfuscation for
-any target. Authorized/CTF use only.
-"""
 from __future__ import annotations
 
 import base64

@@ -1,8 +1,3 @@
-"""Cipher Lab — original crypto-breaking tools written from scratch.
-
-Nothing here shells out. The XOR and Vigenere breakers are real cryptanalysis:
-keysize detection + per-column frequency analysis, cryptopals-style.
-"""
 from __future__ import annotations
 
 import base64

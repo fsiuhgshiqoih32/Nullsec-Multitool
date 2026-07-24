@@ -1,11 +1,3 @@
-"""Curated catalog of real security tools.
-
-Each tuple: (name, category, description, install_hint, binary).
-`binary` is what we check on PATH to see if it's installed (None = library/other).
-This is a hand-curated seed of real tools; the catalog can be extended at runtime
-(see catalog.import_blackarch) to pull thousands more from public inventories.
-"""
-
 SEED_TOOLS = [
     # --- recon / osint ------------------------------------------------------
     ("nmap", "recon", "Network/port scanner and service fingerprinter", "apt install nmap", "nmap"),

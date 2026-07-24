@@ -1,4 +1,3 @@
-"""Web recon: HTTP headers, security-header audit, TLS cert, robots, dir-brute."""
 from __future__ import annotations
 
 import socket

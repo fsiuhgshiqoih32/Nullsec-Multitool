@@ -1,12 +1,3 @@
-"""Arsenal installer.
-
-On Windows this drives the WSL Arch distro + BlackArch repo (the realistic way to
-get the full Linux toolset on Windows). On Linux it uses pacman/apt directly. A
-small Windows-native subset (winget/pip/cargo) is installed too so some tools work
-without WSL.
-
-Everything is idempotent (skips what's already present) and non-interactive.
-"""
 from __future__ import annotations
 
 import platform

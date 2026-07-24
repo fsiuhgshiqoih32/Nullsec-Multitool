@@ -1,4 +1,3 @@
-"""Password utilities: strength/entropy estimate and wordlist generation."""
 from __future__ import annotations
 
 import itertools

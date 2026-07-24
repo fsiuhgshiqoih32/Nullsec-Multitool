@@ -1,9 +1,3 @@
-"""GTFOBins / LOLBAS lookup — living-off-the-land binaries and their abuses.
-
-Offline reference for privilege escalation and defense-evasion research: which
-trusted binaries can spawn shells, read/write files, or download payloads. Curated
-subset of gtfobins.github.io (Unix) and lolbas-project.github.io (Windows).
-"""
 from __future__ import annotations
 
 from rich.prompt import Prompt

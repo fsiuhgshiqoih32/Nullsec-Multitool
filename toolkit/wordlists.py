@@ -1,9 +1,3 @@
-"""Wordlist browser — surface SecLists and /usr/share/wordlists (native or via WSL).
-
-These collections hold thousands of real lists (usernames, passwords, fuzzing
-payloads, discovery paths). This browses/searches them and reports line counts so
-you can pick one to feed hydra/john/ffuf.
-"""
 from __future__ import annotations
 
 import subprocess

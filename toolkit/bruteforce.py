@@ -1,4 +1,3 @@
-"""Network login brute-forcing via hydra (falls back to WSL if installed there)."""
 from __future__ import annotations
 
 from rich.prompt import Prompt

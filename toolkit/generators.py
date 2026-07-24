@@ -1,4 +1,3 @@
-"""Generators — passphrases, targeted wordlists, mutations, and a pwned check."""
 from __future__ import annotations
 
 import hashlib

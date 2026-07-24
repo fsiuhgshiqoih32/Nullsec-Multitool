@@ -1,9 +1,3 @@
-"""Active Directory attacks — Kerberoast & AS-REP roast via Impacket.
-
-Both request Kerberos tickets and dump crackable hashes for OFFLINE cracking
-(feed the output to John/hashcat). Authorized engagements only. Each includes the
-blue-team detection so you understand both sides.
-"""
 from __future__ import annotations
 
 import shutil

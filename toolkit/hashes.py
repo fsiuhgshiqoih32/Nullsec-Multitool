@@ -1,4 +1,3 @@
-"""Hashing: identify a hash, compute hashes, and drive John the Ripper."""
 from __future__ import annotations
 
 import hashlib
