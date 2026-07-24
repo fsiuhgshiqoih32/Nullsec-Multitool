@@ -17,10 +17,7 @@ these tools actually work**, not just to run them.
 > Metasploit (~2,300). The home screen counts what's genuinely reachable. Nothing
 > is a fake stub.
 
-> ⚠️ **Authorized use only.** Point this at machines you own, lab VMs you control,
-> or CTF/training targets you have explicit permission to test (HackTheBox,
-> TryHackMe, picoCTF). Scanning or cracking systems you don't own is illegal in
-> most places. This is a learning tool.
+
 
 ## Run
 
