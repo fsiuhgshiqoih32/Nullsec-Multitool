@@ -1,0 +1,161 @@
+"""Curated catalog of real security tools.
+
+Each tuple: (name, category, description, install_hint, binary).
+`binary` is what we check on PATH to see if it's installed (None = library/other).
+This is a hand-curated seed of real tools; the catalog can be extended at runtime
+(see catalog.import_blackarch) to pull thousands more from public inventories.
+"""
+
+SEED_TOOLS = [
+    # --- recon / osint ------------------------------------------------------
+    ("nmap", "recon", "Network/port scanner and service fingerprinter", "apt install nmap", "nmap"),
+    ("masscan", "recon", "Internet-scale TCP port scanner", "apt install masscan", "masscan"),
+    ("rustscan", "recon", "Ultra-fast port scanner (feeds nmap)", "cargo install rustscan", "rustscan"),
+    ("naabu", "recon", "Fast SYN/CONNECT port scanner (ProjectDiscovery)", "go install .../naabu", "naabu"),
+    ("amass", "recon", "In-depth subdomain enumeration/attack surface", "apt install amass", "amass"),
+    ("subfinder", "recon", "Passive subdomain discovery", "go install .../subfinder", "subfinder"),
+    ("assetfinder", "recon", "Find domains/subdomains", "go install .../assetfinder", "assetfinder"),
+    ("dnsx", "recon", "Fast DNS toolkit", "go install .../dnsx", "dnsx"),
+    ("dnsenum", "recon", "DNS enumeration", "apt install dnsenum", "dnsenum"),
+    ("dnsrecon", "recon", "DNS recon and record enumeration", "apt install dnsrecon", "dnsrecon"),
+    ("fierce", "recon", "DNS reconnaissance / zone transfer", "pip install fierce", "fierce"),
+    ("theHarvester", "osint", "Emails/subdomains/names from public sources", "apt install theharvester", "theHarvester"),
+    ("recon-ng", "osint", "Full-featured web recon framework", "apt install recon-ng", "recon-ng"),
+    ("spiderfoot", "osint", "Automated OSINT collection", "pip install spiderfoot", "sf"),
+    ("shodan", "osint", "Shodan CLI (device search engine)", "pip install shodan", "shodan"),
+    ("maltego", "osint", "Graphical link-analysis / OSINT", "apt install maltego", "maltego"),
+    ("sherlock", "osint", "Hunt usernames across social networks", "pip install sherlock-project", "sherlock"),
+    ("holehe", "osint", "Check if an email is used on sites", "pip install holehe", "holehe"),
+    ("gitleaks", "osint", "Find secrets in git repos", "brew install gitleaks", "gitleaks"),
+    ("trufflehog", "osint", "Find leaked credentials in code", "pip install trufflehog", "trufflehog"),
+
+    # --- web ----------------------------------------------------------------
+    ("nikto", "web", "Web server vulnerability scanner", "apt install nikto", "nikto"),
+    ("gobuster", "web", "Directory/DNS/vhost brute-forcer", "apt install gobuster", "gobuster"),
+    ("ffuf", "web", "Fast web fuzzer", "go install .../ffuf", "ffuf"),
+    ("feroxbuster", "web", "Recursive content discovery", "apt install feroxbuster", "feroxbuster"),
+    ("dirsearch", "web", "Web path brute-forcer", "pip install dirsearch", "dirsearch"),
+    ("wfuzz", "web", "Web application fuzzer", "pip install wfuzz", "wfuzz"),
+    ("sqlmap", "web", "Automatic SQL injection & DB takeover", "apt install sqlmap", "sqlmap"),
+    ("wpscan", "web", "WordPress vulnerability scanner", "gem install wpscan", "wpscan"),
+    ("nuclei", "web", "Template-based vuln scanner (~9k templates)", "go install .../nuclei", "nuclei"),
+    ("httpx", "web", "Fast HTTP probing/toolkit", "go install .../httpx", "httpx"),
+    ("katana", "web", "Next-gen crawling/spider", "go install .../katana", "katana"),
+    ("gau", "web", "Fetch known URLs (wayback/otx)", "go install .../gau", "gau"),
+    ("waybackurls", "web", "Pull URLs from the Wayback Machine", "go install .../waybackurls", "waybackurls"),
+    ("arjun", "web", "HTTP parameter discovery", "pip install arjun", "arjun"),
+    ("dalfox", "web", "XSS scanner/parameter analyzer", "go install .../dalfox", "dalfox"),
+    ("xsstrike", "web", "Advanced XSS detection", "git clone XSStrike", "xsstrike"),
+    ("commix", "web", "Automated command-injection", "apt install commix", "commix"),
+    ("whatweb", "web", "Web technology fingerprinter", "apt install whatweb", "whatweb"),
+    ("wafw00f", "web", "Identify/fingerprint WAFs", "pip install wafw00f", "wafw00f"),
+    ("burpsuite", "web", "Web proxy / testing platform", "apt install burpsuite", "burpsuite"),
+    ("zaproxy", "web", "OWASP ZAP web proxy/scanner", "apt install zaproxy", "zaproxy"),
+    ("jwt_tool", "web", "Test/forge JSON Web Tokens", "git clone jwt_tool", None),
+
+    # --- exploitation / frameworks -----------------------------------------
+    ("metasploit", "exploit", "Exploitation framework (~2,300 exploits)", "apt install metasploit-framework", "msfconsole"),
+    ("searchsploit", "exploit", "Offline Exploit-DB search (~45k exploits)", "apt install exploitdb", "searchsploit"),
+    ("beef-xss", "exploit", "Browser exploitation framework", "apt install beef-xss", "beef-xss"),
+    ("routersploit", "exploit", "Exploitation framework for embedded devices", "pip install routersploit", "rsf"),
+    ("setoolkit", "exploit", "Social-engineering toolkit", "apt install set", "setoolkit"),
+    ("evil-winrm", "exploit", "WinRM shell for pentesting", "gem install evil-winrm", "evil-winrm"),
+    ("impacket", "exploit", "Python network-protocol toolkit (SMB/etc.)", "pip install impacket", None),
+    ("crackmapexec", "exploit", "Swiss-army knife for AD/networks", "pipx install crackmapexec", "crackmapexec"),
+    ("netexec", "exploit", "Maintained CME successor (nxc)", "pipx install netexec", "nxc"),
+
+    # --- passwords / cracking ----------------------------------------------
+    ("john", "passwords", "John the Ripper password cracker", "apt install john", "john"),
+    ("hashcat", "passwords", "GPU-accelerated hash cracker", "apt install hashcat", "hashcat"),
+    ("hydra", "passwords", "Network login brute-forcer", "apt install hydra", "hydra"),
+    ("medusa", "passwords", "Parallel network login brute-forcer", "apt install medusa", "medusa"),
+    ("ncrack", "passwords", "High-speed network auth cracker", "apt install ncrack", "ncrack"),
+    ("patator", "passwords", "Multi-purpose brute-forcer", "pip install patator", "patator"),
+    ("hashid", "passwords", "Identify hash types", "pip install hashid", "hashid"),
+    ("hash-identifier", "passwords", "Identify hash types", "apt install hash-identifier", "hash-identifier"),
+    ("cewl", "passwords", "Custom wordlist generator from a site", "apt install cewl", "cewl"),
+    ("crunch", "passwords", "Wordlist generator by pattern", "apt install crunch", "crunch"),
+    ("cupp", "passwords", "Common user password profiler", "git clone cupp", None),
+
+    # --- network / sniffing / mitm -----------------------------------------
+    ("wireshark", "network", "Network protocol analyzer (GUI)", "apt install wireshark", "wireshark"),
+    ("tshark", "network", "Wireshark CLI", "apt install tshark", "tshark"),
+    ("tcpdump", "network", "CLI packet capture", "apt install tcpdump", "tcpdump"),
+    ("ettercap", "network", "MITM / ARP poisoning suite", "apt install ettercap-graphical", "ettercap"),
+    ("bettercap", "network", "Modern MITM/network attack framework", "apt install bettercap", "bettercap"),
+    ("responder", "network", "LLMNR/NBT-NS/MDNS poisoner", "apt install responder", "responder"),
+    ("mitmproxy", "network", "Interactive HTTPS proxy", "pip install mitmproxy", "mitmproxy"),
+    ("scapy", "network", "Packet crafting/manipulation library", "pip install scapy", None),
+    ("netcat", "network", "TCP/UDP swiss-army knife", "apt install netcat-traditional", "nc"),
+    ("socat", "network", "Multipurpose relay", "apt install socat", "socat"),
+    ("proxychains", "network", "Force TCP through proxies", "apt install proxychains4", "proxychains4"),
+
+    # --- wireless -----------------------------------------------------------
+    ("aircrack-ng", "wireless", "WiFi cracking suite", "apt install aircrack-ng", "aircrack-ng"),
+    ("wifite", "wireless", "Automated wireless attacks", "apt install wifite", "wifite"),
+    ("kismet", "wireless", "Wireless sniffer/IDS", "apt install kismet", "kismet"),
+    ("reaver", "wireless", "WPS PIN brute-force", "apt install reaver", "reaver"),
+    ("bully", "wireless", "WPS brute-force", "apt install bully", "bully"),
+    ("hcxdumptool", "wireless", "Capture WPA PMKID", "apt install hcxdumptool", "hcxdumptool"),
+    ("fluxion", "wireless", "Evil-twin / handshake capture", "git clone fluxion", None),
+
+    # --- reversing / exploitdev / forensics --------------------------------
+    ("ghidra", "reversing", "NSA reverse-engineering suite", "apt install ghidra", "ghidra"),
+    ("radare2", "reversing", "Reverse-engineering framework", "apt install radare2", "r2"),
+    ("rizin", "reversing", "radare2 fork RE framework", "apt install rizin", "rizin"),
+    ("gdb", "reversing", "GNU debugger (+pwndbg/gef)", "apt install gdb", "gdb"),
+    ("binwalk", "reversing", "Firmware analysis/extraction", "apt install binwalk", "binwalk"),
+    ("pwntools", "reversing", "CTF/exploit-dev Python library", "pip install pwntools", None),
+    ("ropgadget", "reversing", "Find ROP gadgets", "pip install ropgadget", "ROPgadget"),
+    ("one_gadget", "reversing", "Find one-shot RCE gadgets in libc", "gem install one_gadget", "one_gadget"),
+    ("volatility3", "forensics", "Memory forensics framework", "pip install volatility3", "vol"),
+    ("autopsy", "forensics", "Digital forensics platform", "apt install autopsy", "autopsy"),
+    ("foremost", "forensics", "File carving/recovery", "apt install foremost", "foremost"),
+    ("exiftool", "forensics", "Read/write file metadata", "apt install libimage-exiftool-perl", "exiftool"),
+    ("steghide", "stego", "Hide/extract data in images/audio", "apt install steghide", "steghide"),
+    ("stegseek", "stego", "Fast steghide cracker", "apt install stegseek", "stegseek"),
+    ("zsteg", "stego", "Detect stego in PNG/BMP", "gem install zsteg", "zsteg"),
+
+    # --- post-exploitation / AD / privesc ----------------------------------
+    ("bloodhound", "postexp", "Active Directory attack-path mapping", "pip install bloodhound", "bloodhound-python"),
+    ("mimikatz", "postexp", "Windows credential extraction", "download release", "mimikatz"),
+    ("linpeas", "postexp", "Linux privilege-escalation enum", "git clone PEASS-ng", None),
+    ("winpeas", "postexp", "Windows privilege-escalation enum", "git clone PEASS-ng", None),
+    ("linenum", "postexp", "Linux enumeration script", "git clone LinEnum", None),
+    ("pspy", "postexp", "Snoop processes without root", "download release", "pspy"),
+    ("chisel", "postexp", "TCP/UDP tunnel over HTTP", "go install .../chisel", "chisel"),
+    ("ligolo-ng", "postexp", "Tunneling/pivoting tool", "download release", "ligolo"),
+
+    # --- c2 -----------------------------------------------------------------
+    ("sliver", "c2", "Cross-platform C2 framework", "curl sliver.sh | sh", "sliver-server"),
+    ("covenant", "c2", ".NET C2 framework", "docker covenant", None),
+    ("havoc", "c2", "Modern C2 framework", "git clone Havoc", None),
+    ("mythic", "c2", "Collaborative multiplayer C2", "git clone Mythic", None),
+    ("empire", "c2", "PowerShell/Python post-exploitation C2", "apt install powershell-empire", "empire"),
+
+    # --- cloud / container --------------------------------------------------
+    ("prowler", "cloud", "AWS/Azure/GCP security assessment", "pip install prowler", "prowler"),
+    ("scoutsuite", "cloud", "Multi-cloud security auditing", "pip install scoutsuite", "scout"),
+    ("pacu", "cloud", "AWS exploitation framework", "pip install pacu", "pacu"),
+    ("trivy", "cloud", "Container/IaC vulnerability scanner", "apt install trivy", "trivy"),
+    ("kube-hunter", "cloud", "Kubernetes pen-test tool", "pip install kube-hunter", "kube-hunter"),
+
+    # --- mobile -------------------------------------------------------------
+    ("mobsf", "mobile", "Mobile app security framework", "docker mobsf", None),
+    ("apktool", "mobile", "Reverse-engineer APKs", "apt install apktool", "apktool"),
+    ("frida", "mobile", "Dynamic instrumentation toolkit", "pip install frida-tools", "frida"),
+    ("objection", "mobile", "Runtime mobile exploration (Frida)", "pip install objection", "objection"),
+    ("jadx", "mobile", "Dex to Java decompiler", "apt install jadx", "jadx"),
+
+    # --- fuzzing ------------------------------------------------------------
+    ("afl++", "fuzzing", "Coverage-guided fuzzer", "apt install aflplusplus", "afl-fuzz"),
+    ("boofuzz", "fuzzing", "Network protocol fuzzing framework", "pip install boofuzz", None),
+    ("radamsa", "fuzzing", "Mutation-based blackbox fuzzer", "apt install radamsa", "radamsa"),
+
+    # --- misc / utility -----------------------------------------------------
+    ("cyberchef", "misc", "The 'cyber swiss-army knife' (web)", "web/electron", None),
+    ("seclists", "misc", "Massive collection of security wordlists", "apt install seclists", None),
+    ("payloadsallthethings", "misc", "Huge payload/technique reference", "git clone PayloadsAllTheThings", None),
+    ("gtfobins", "misc", "Unix binaries for bypassing restrictions (ref)", "web reference", None),
+    ("lolbas", "misc", "Living-off-the-land Windows binaries (ref)", "web reference", None),
+]
